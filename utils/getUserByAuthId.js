@@ -24,3 +24,21 @@ const getUserByAuthId = async (auth_id) => {
 };
 
 module.exports = { getUserByAuthId };
+
+
+const validateForm = (formData) => {
+    let validationError = "";
+    if (!formData.user_name) validationError = "Username is required";
+    if (!formData.organization_name) validationError = "The name of your organization is required";
+    if (!formData.email) {
+      validationError = "Email is required";
+    }
+    if (!formData.password) {
+      validationError = "Password is required";
+    } else if (formData.password.length < 6) {
+      validationError = "Password must be at least 6 characters";
+    }
+    return validationError;
+  };
+
+module.exports = { getUserByAuthId, validateForm };
