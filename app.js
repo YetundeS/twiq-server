@@ -4,6 +4,7 @@ const dotenv = require('dotenv');
 const bodyParser = require('body-parser');
 
 const userRoutes = require('./routes/userRoutes.js');
+const suggestPromptsRoutes = require('./routes/suggestPromptsRoutes.js');
 const cookieParser = require('cookie-parser');
 
 const app = express();
@@ -31,6 +32,7 @@ app.use(cookieParser());
 
 // Routes
 app.use('/api/user', userRoutes);
+app.use('/api/suggest-prompts', suggestPromptsRoutes);
 
 // Health Check Route
 app.get('/', (req, res) => {
