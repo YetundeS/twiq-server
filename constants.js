@@ -1,11 +1,19 @@
+
+const COACH_ASSISTANTS = {
+  carousel: 'asst_abc123',
+  storyteller: 'asst_def456',
+  headlines: 'asst_xyz789',
+  linkedin: 'asst_qwe321',
+  video_scripts: 'asst_klo763',
+  linkedin_business: 'asst_lmn987',
+  captions: 'asst_uvw654',
+};
+
+function getAssistantId(slug) {
+  return COACH_ASSISTANTS[slug];
+}
+
 module.exports = {
-  COACH_ASSISTANTS: {
-    carousel: 'asst_abc123456', // replace with actual assistant ID
-    storyteller: 'asst_abc123456', // replace with actual assistant ID
-    headlines: 'asst_abc123456', // replace with actual assistant ID
-    linkedinBusiness: 'asst_abc123456', // replace with actual assistant ID
-    linkedinPersonal: 'asst_abc123456', // replace with actual assistant ID
-    captions: 'asst_abc123456', // replace with actual assistant ID
-    videoScripts: 'asst_abc123456', // replace with actual assistant ID
-  },
+  COACH_ASSISTANTS,
+  getAssistantId,
 };
