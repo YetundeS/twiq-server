@@ -6,6 +6,7 @@ const bodyParser = require('body-parser');
 const userRoutes = require('./routes/userRoutes.js');
 const suggestPromptsRoutes = require('./routes/suggestPromptsRoutes.js');
 const chatsRoutes = require('./routes/chats.js');
+const chatMessagesRoutes = require('./routes/chatMessages.js');
 const cookieParser = require('cookie-parser');
 
 const app = express();
@@ -35,6 +36,7 @@ app.use(cookieParser());
 app.use('/api/user', userRoutes);
 app.use('/api/suggest-prompts', suggestPromptsRoutes);
 app.use('/api/chats', chatsRoutes);
+app.use('/api/chat-message', chatMessagesRoutes);
 
 // Health Check Route
 app.get('/', (req, res) => {

@@ -1,7 +1,7 @@
 const supabase = require("../config/supabaseClient");
 
 const { getUserByAuthId, validateForm } = require("../utils/getUserByAuthId");
-const  { getRandomAvatar } = require("../services/authService")
+const { getRandomAvatar } = require("../services/authService")
 
 const exempted_role = [
     "admin",
@@ -74,11 +74,6 @@ exports.signup = async (req, res) => {
 };
 
 
-
-
-
-
-
 // User Login
 exports.login = async (req, res) => {
     const { email, password } = req.body;
@@ -96,17 +91,19 @@ exports.login = async (req, res) => {
     let user = await getUserByAuthId(data?.user?.id);
 
     // Send the access_token in the response body instead of a cookie
-    return res.status(200).json({ 
-        message: 'Login successful.', 
-        user, 
+    return res.status(200).json({
+        message: 'Login successful.',
+        user,
         access_token: data.session.access_token // Send token to frontend
     });
 };
 
+
+
 // logout 
 exports.logout = async (req, res) => {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
         return res.status(400).json({ error: "No token provided." });
     }
@@ -138,8 +135,8 @@ exports.resetPassword = async (req, res) => {
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${process.env.RESET_PASS_REDIRECT_URL}`,
-      })
-      
+    })
+
 
     if (error) return res.status(400).json({ error: error.message });
     return res.status(200).json({ message: 'Password reset email sent.' });
@@ -149,26 +146,5 @@ exports.resetPassword = async (req, res) => {
 
 // fetch user
 exports.getUser = async (req, res) => {
-    const authHeader = req.headers.authorization;
-  
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Unauthorized: No token provided" });
-    }
-  
-    const token = authHeader.split(" ")[1];
-  
-    try {
-      const { data, error } = await supabase.auth.getUser(token);
-  
-      if (error || !data.user) {
-        return res.status(401).json({ error: "Unauthorized: Invalid token" });
-      }
-  
-      const user = await getUserByAuthId(data?.user?.id);
-  
-      return res.status(200).json({ user })
-    } catch (err) {
-      // console.error('Authentication error:', err);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-  }
+    return res.status(200).json({ user: req.user });
+};
