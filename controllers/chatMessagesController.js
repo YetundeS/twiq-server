@@ -1,6 +1,7 @@
 const supabase = require('../config/supabaseClient');
 const { COACH_ASSISTANTS } = require('../constants');
 const openai = require('../openai');
+const { generateCustomSessionTitle } = require('../services/chatMessageService');
 
 // exports.createChatMessage = async (req, res) => {
 //   const { session_id, sender, content } = req.body;
@@ -258,7 +259,7 @@ exports.sendMessage = async (req, res) => {
   const { session_id, content, assistantSlug } = req.body;
   const user_id = req.user.id;
 
-  if (!content || !assistantSlug) {
+  if (!content || !content.trim() || !assistantSlug) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -266,9 +267,21 @@ exports.sendMessage = async (req, res) => {
   let threadId;
   let chatSession;
 
+  // Generate a title based on first user message
+  let generatedTitle = 'New Chat';
+
   try {
     // Create session + thread if needed
     if (!chatSessionId) {
+      // generate custom chat session title for new chats
+      try {
+        generatedTitle = await generateCustomSessionTitle(content);
+      } catch (titleGenError) {
+        console.warn('Title generation failed, using fallback:', titleGenError.message);
+      }
+
+
+      // create session + thread
       const thread = await openai.beta.threads.create();
       threadId = thread.id;
 
@@ -279,7 +292,7 @@ exports.sendMessage = async (req, res) => {
             user_id,
             assistant_slug: assistantSlug,
             thread_id: threadId,
-            title: 'New Chat',
+            title: generatedTitle,
           },
         ])
         .select()
@@ -291,7 +304,7 @@ exports.sendMessage = async (req, res) => {
     } else {
       const { data: sessionData, error: fetchError } = await supabase
         .from('chat_sessions')
-        .select('thread_id')
+        .select('*')
         .eq('id', chatSessionId)
         .single();
 
@@ -391,8 +404,9 @@ exports.sendMessage = async (req, res) => {
       ]);
     }
   } catch (err) {
-    console.error('Error during stream:', err);
+    // console.error('Error during stream:', err);
     if (!res.headersSent) {
+      res.status(500); // Set 500 status code
       res.write(`data: ${JSON.stringify({ type: 'ERROR', message: err.message })}\n\n`);
       res.end();
     }
