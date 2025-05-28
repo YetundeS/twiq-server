@@ -1,6 +1,6 @@
 const openai = require("../openai");
 
-export async function generateCustomSessionTitle(content) {
+async function generateCustomSessionTitle(content) {
   const prompt = `Summarize this user message in 3–6 words for a chat title:\n"${content}"`;
   try {
     const response = await openai.chat.completions.create({
@@ -14,3 +14,5 @@ export async function generateCustomSessionTitle(content) {
     return 'New Chat';
   }
 }
+
+module.exports = { generateCustomSessionTitle };

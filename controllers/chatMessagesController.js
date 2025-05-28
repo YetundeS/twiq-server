@@ -275,7 +275,8 @@ exports.sendMessage = async (req, res) => {
     if (!chatSessionId) {
       // generate custom chat session title for new chats
       try {
-        generatedTitle = await generateCustomSessionTitle(content);
+        const customTitle = await generateCustomSessionTitle(content);
+        if (customTitle) generatedTitle = customTitle;
       } catch (titleGenError) {
         console.warn('Title generation failed, using fallback:', titleGenError.message);
       }
