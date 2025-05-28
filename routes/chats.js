@@ -1,11 +1,13 @@
 const express = require('express');
-const { listChatSessionsPerModel, listAllChatSessions } = require('../controllers/chats');
+const { listChatSessionsPerModel, listAllChatSessions, getMessagesBySession, fetchOneChatSession } = require('../controllers/chats');
 const { isAuthenticatedUser } = require('../middlewares/authMiddleware');
 const router = express.Router();
 
-// router.post('/new', isAuthenticatedUser, createNewChat);
+
+
 router.get('/', isAuthenticatedUser, listChatSessionsPerModel);
 router.get('/all', isAuthenticatedUser, listAllChatSessions);
-// router.get('/stream/:chatId', isAuthenticatedUser, streamAssistantResponse);
+router.get('/fetchOne/:sessionId', isAuthenticatedUser, fetchOneChatSession);
+router.get('/fetch/:sessionId', isAuthenticatedUser, getMessagesBySession );
 
 module.exports = router;
