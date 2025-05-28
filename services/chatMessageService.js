@@ -1,7 +1,7 @@
 const openai = require("../openai");
 
 async function generateCustomSessionTitle(content) {
-  const prompt = `Summarize this user message in 3–6 words for a chat title:\n"${content}"`;
+  const prompt = `Summarize this user message in 4 words max for a chat title:\n"${content}"`;
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4',
