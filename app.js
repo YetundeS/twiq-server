@@ -15,7 +15,7 @@ const app = express();
 dotenv.config(); // Load environment variables
 
 // Middleware
-const allowedOrigins = ["http://localhost:3000"];
+const allowedOrigins = ["http://localhost:3000", "https://twiq.vercel.app/"];
 
 app.use(
     cors({
