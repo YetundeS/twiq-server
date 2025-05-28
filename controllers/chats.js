@@ -56,10 +56,11 @@ exports.listAllChatSessions = async (req, res) => {
 
 exports.getMessagesBySession = async (req, res) => {
   const { sessionId } = req.params;
+  const { assistantSlug } = req.query;
   const user_id = req.user?.id;
 
-  if (!sessionId) {
-    return res.status(400).json({ error: 'Missing session ID' });
+  if (!sessionId || !assistantSlug) {
+    return res.status(400).json({ error: 'Missing session ID or assistantSlug' });
   }
 
   if (!user_id) {
@@ -67,20 +68,19 @@ exports.getMessagesBySession = async (req, res) => {
   }
 
   try {
-    // 🔒 Step 1: Ensure the session belongs to the user
+    // 🔒 Step 1: Ensure the session belongs to the user and matches assistantSlug
     const { data: session, error: sessionError } = await supabase
       .from('chat_sessions')
-      .select('id, user_id')
+      .select('id, user_id, assistant_slug')
       .eq('id', sessionId)
+      .eq('user_id', user_id)
+      .eq('assistant_slug', assistantSlug)
       .single();
 
     if (sessionError || !session) {
-      return res.status(404).json({ error: 'Chat session not found' });
+      return res.status(404).json({ error: 'Chat session not found or does not match assistantSlug' });
     }
 
-    if (session.user_id !== user_id) {
-      return res.status(403).json({ error: 'Forbidden: You do not own this session' });
-    }
 
     // ✅ Step 2: Fetch messages
     const { data: messages, error: messageError } = await supabase
