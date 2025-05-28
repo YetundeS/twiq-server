@@ -8,9 +8,15 @@ async function generateCustomSessionTitle(content) {
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 15,
     });
-    return response.choices?.[0]?.message?.content?.trim() || 'New Chat';
+
+    let title = response.choices?.[0]?.message?.content?.trim() || 'New Chat';
+
+    // remove surrounding quotes if present (single or double)
+    title = title.replace(/^["']|["']$/g, '');
+
+    return title;
   } catch (err) {
-    console.warn('Title generation failed:', err.message);
+    // console.warn('Title generation failed:', err.message);
     return 'New Chat';
   }
 }
