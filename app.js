@@ -15,20 +15,19 @@ const app = express();
 dotenv.config(); // Load environment variables
 
 // Middleware
-const allowedOrigins = ["http://localhost:3000", "https://twiq.vercel.app/"];
-
 app.use(
     cors({
-        origin: (origin, callback) => {
-            if (!origin || allowedOrigins.includes(origin)) {
-                callback(null, true); // Use `true` instead of `origin`
-            } else {
-                callback(new Error("Not allowed by CORS"));
-            }
-        },
-        credentials: true,
+      origin: ["http://localhost:3000", "https://twiq.vercel.app/"], // Restrict to known origins
+      credentials: true, // Allow cookies & authentication
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "Content-Length",
+        "X-Requested-With",
+      ],
     })
-);
+  );
 app.use(bodyParser.json());
 app.use(cookieParser());
 
