@@ -4,7 +4,7 @@ const { getUserByAuthId, validateForm } = require("../utils/getUserByAuthId");
 const { getRandomAvatar } = require("../services/authService")
 
 const exempted_role = [
-    "admin",
+    // "admin",
     "developer"
 ]
 
