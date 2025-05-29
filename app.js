@@ -31,6 +31,8 @@ app.use(
 app.use(bodyParser.json());
 app.use(cookieParser());
 
+app.options("*", cors()); // Handle preflight requests
+
 // Routes
 app.use('/api/user', userRoutes);
 app.use('/api/suggest-prompts', suggestPromptsRoutes);
