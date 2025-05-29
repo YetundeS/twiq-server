@@ -1,8 +1,6 @@
 // controller/chats.js
 
 const supabase = require("../config/supabaseClient");
-const { getAssistantId } = require("../constants");
-const openai = require("../openai");
 
 exports.listChatSessionsPerModel = async (req, res) => {
     const { userId, assistantSlug } = req.query;
@@ -108,7 +106,7 @@ exports.fetchOneChatSession = async (req, res) => {
   if (!sessionId) {
     return res.status(400).json({ error: 'Missing session ID' });
   }
-  console.log('started')
+  // console.log('started')
 
   try {
     const { data: session, error } = await supabase

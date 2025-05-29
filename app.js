@@ -31,7 +31,8 @@ app.use(
 app.use(bodyParser.json());
 app.use(cookieParser());
 
-app.options("*", cors()); // Handle preflight requests
+app.options(/.*/, cors());
+
 
 // Routes
 app.use('/api/user', userRoutes);
