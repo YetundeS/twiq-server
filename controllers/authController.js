@@ -4,7 +4,7 @@ const { getUserByAuthId, validateForm } = require("../utils/getUserByAuthId");
 const { getRandomAvatar } = require("../services/authService")
 
 const exempted_role = [
-    // "admin",
+    "admin",
     "developer"
 ]
 
@@ -84,7 +84,31 @@ exports.login = async (req, res) => {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
+
     if (error) {
+        const errorMessage = error.message.toLowerCase();
+
+        // 🔁 Auto-resend confirmation email if not confirmed
+        if (errorMessage.includes('email not confirmed')) {
+            const { error: resendError } = await supabase.auth.resend({
+                type: 'signup',
+                email,
+                options: {
+                    emailRedirectTo: 'http://twiq.vercel.app//auth'
+                }
+            });
+
+            if (resendError) {
+                return res.status(400).json({
+                    error: 'Failed to resend confirmation email. ' + resendError.message
+                });
+            }
+
+            return res.status(400).json({
+                error: 'Email not confirmed. A new confirmation email has been sent.'
+            });
+        }
+
         return res.status(400).json({ error: error.message });
     }
 
