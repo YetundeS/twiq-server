@@ -94,7 +94,7 @@ exports.login = async (req, res) => {
                 type: 'signup',
                 email,
                 options: {
-                    emailRedirectTo: 'http://twiq.vercel.app//auth'
+                    emailRedirectTo: 'https://twiq.vercel.app/auth'
                 }
             });
 
@@ -113,6 +113,11 @@ exports.login = async (req, res) => {
     }
 
     let user = await getUserByAuthId(data?.user?.id);
+    
+    if(user?.error) {
+        return res.status(400).json({ error: 'Error fetching user.' });
+    }
+
 
     // Send the access_token in the response body instead of a cookie
     return res.status(200).json({
