@@ -13,7 +13,36 @@ function getAssistantId(slug) {
   return COACH_ASSISTANTS[slug];
 }
 
+const PLAN_QUOTAS = {
+  STARTER: {
+    input_tokens: 4156000,
+    output_tokens: 831000,
+    cached_input_tokens: 3325000,
+  },
+  PRO: {
+    input_tokens: 8322000,
+    output_tokens: 1664000,
+    cached_input_tokens: 6658000,
+  },
+  ENTERPRISE: {
+    input_tokens: 31239000,
+    output_tokens: 6248000,
+    cached_input_tokens: 24991000, 
+  },
+};
+
+const PLAN_ID_MAP = {
+  prod_SLfSE6oRt80Mu7: 'STARTER',
+  prod_SLfTLYmEto0mP5: 'PRO',
+  prod_SLfX1eCT161Yxe: 'ENTERPRISE',
+};
+
+
 module.exports = {
   COACH_ASSISTANTS,
   getAssistantId,
+  PLAN_QUOTAS,
+  PLAN_ID_MAP
 };
+
+
