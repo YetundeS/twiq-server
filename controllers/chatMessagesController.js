@@ -1,15 +1,29 @@
 const supabase = require('../config/supabaseClient');
 const { COACH_ASSISTANTS } = require('../constants');
 const openai = require('../openai');
-const { generateCustomSessionTitle } = require('../services/chatMessageService');
+const { generateCustomSessionTitle, checkIfEnoughQuota } = require('../services/chatMessageService');
+const { encoding_for_model } = require('@dqbd/tiktoken');
+const encoding = encoding_for_model('gpt-4'); // adjust based on your model
 
 exports.sendMessage = async (req, res) => {
   const { session_id, content, assistantSlug } = req.body;
-  const user_id = req.user.id;
+  const user = req.user
+  const user_id = user.id;
+  // console.log('user: ', user)
+
+  if (!user?.is_active) {
+    return res.status(403).json({ error: 'Subscription inactive' });
+  }
+
+  const check = await checkIfEnoughQuota(user);
+  if (check?.error) {
+    res.status(403).json({ error: check?.error || 'Quota Exceeded' })
+  }
 
   if (!content || !content.trim() || !assistantSlug) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
+
 
   let chatSessionId = session_id;
   let threadId;
@@ -132,6 +146,56 @@ exports.sendMessage = async (req, res) => {
             status: 'complete',
           },
         ]);
+
+
+        // 📊 Estimate tokens
+        const inputTokens = encoding.encode(content).length;
+        const outputTokens = encoding.encode(fullAssistantReply).length;
+
+        // console.log('Input tokens:', inputTokens);
+        // console.log('Output tokens:', outputTokens);
+
+        // 🔄 Update subscription usage
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('subscription_usage')
+          .eq('id', user_id)
+          .single();
+
+        if (profileError) {
+          // console.error('❌ Error fetching profile:', profileError);
+        } else if (!profile) {
+          // console.error('❌ No profile found for user_id:', user_id);
+        } else {
+          // console.log('✅ Current usage:', profile.subscription_usage);
+
+          const usage = profile.subscription_usage || {
+            input_tokens_used: 0,
+            output_tokens_used: 0,
+            cached_input_tokens_used: 0,
+          };
+
+          const updatedUsage = {
+            input_tokens_used: usage.input_tokens_used + inputTokens,
+            output_tokens_used: usage.output_tokens_used + outputTokens,
+            cached_input_tokens_used: usage.cached_input_tokens_used + 0,
+          };
+
+          // console.log('🔄 Attempting to update usage to:', updatedUsage);
+
+          const { data: updatedProfile, error: updateError } = await supabase
+            .from('profiles')
+            .update({ subscription_usage: updatedUsage })
+            .eq('id', user_id)
+            .select();
+
+          if (updateError) {
+            // console.error('❌ Failed to update usage:', updateError);
+          } else {
+            // console.log('✅ Updated usage successfully:', updatedProfile);
+          }
+        }
+
 
         res.write(`data: ${JSON.stringify({ type: 'END' })}\n\n`);
         res.end();
