@@ -8,7 +8,7 @@ exports.createCheckoutSession = async (req, res) => {
     // Assuming you have auth middleware that sets req.user
     const userId = req.user?.id;
     const userEmail = req.user?.email;
-
+ 
     if (!priceId) {
         return res.status(400).json({ error: 'Price Id is required.' });
     }
@@ -42,9 +42,9 @@ exports.createCheckoutSession = async (req, res) => {
 exports.trackSubscription = async (request, response) => {
     const sig = request.headers['stripe-signature'];
     let event;
+    
 
     try {
-        // Make sure your framework passes raw body here (e.g., express.raw)
         event = stripe.webhooks.constructEvent(request.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } catch (err) {
         console.error('Webhook signature verification failed:', err.message);
@@ -95,9 +95,9 @@ exports.trackSubscription = async (request, response) => {
             case 'customer.subscription.updated': {
                 const subscription = event.data.object;
                 const stripeCustomerId = subscription.customer;
-                const newPriceId = subscription.items.data[0].price.id;
+                const newProductId = subscription.items.data[0].price.product;
 
-                await updateSubscriptionPlan(stripeCustomerId, newPriceId);
+                await updateSubscriptionPlan(stripeCustomerId, newProductId);
                 break;
             }
 

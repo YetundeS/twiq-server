@@ -3,29 +3,32 @@ const supabase = require("../config/supabaseClient");
 const { PLAN_QUOTAS, PLAN_ID_MAP } = require("../constants");
 
 async function saveSubscription({ userId, stripeCustomerId, stripeSubscriptionId, productId }) {
-  const plan = PLAN_ID_MAP[productId]; 
+  try {
+    const plan = PLAN_ID_MAP[productId]; 
+    const quota = PLAN_QUOTAS[plan];
 
-  const quota = PLAN_QUOTAS[plan];
+    if (!quota) {
+      console.error(`Invalid plan "${plan}" passed to saveSubscription`);
+      return;
+    }
 
-  if (!quota) {
-    console.error(`Invalid plan "${plan}" passed to saveSubscription`);
-    return;
-  }
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        stripe_customer_id: stripeCustomerId,
+        stripe_subscription_id: stripeSubscriptionId,
+        subscription_plan: plan,   
+        is_active: true,
+        subscription_quota: quota,
+        quota_last_reset: new Date(),
+      })
+      .eq('id', userId);
 
-  const { error } = await supabase
-    .from('users')
-    .update({
-      stripe_customer_id: stripeCustomerId,
-      stripe_subscription_id: stripeSubscriptionId,
-      subscription_plan: plan,   
-      is_active: true,
-      subscription_quota: quota,
-      quota_last_reset: new Date(),
-    })
-    .eq('id', userId);
-
-  if (error) {
-    console.error('Error updating user subscription:', error.message);
+    if (error) {
+      console.error('Error updating user subscription:', error.message);
+    }
+  } catch (err) {
+    console.error('Unexpected error in saveSubscription:', err);
   }
 }
 
@@ -37,7 +40,7 @@ async function markSubscriptionInactive(stripeCustomerId) {
 
   try {
     const { error } = await supabase
-      .from('users')
+      .from('profiles')
       .update({
         is_active: false,
         subscription_plan: null,
@@ -57,22 +60,22 @@ async function markSubscriptionInactive(stripeCustomerId) {
   }
 }
 
-async function updateSubscriptionPlan(stripeCustomerId, newPriceId) {
-  if (!stripeCustomerId || !newPriceId) {
+async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
+  if (!stripeCustomerId || !newProductId) {
     console.error("Missing parameters in updateSubscriptionPlan");
     return;
   }
 
   try {
-    const plan = PLAN_ID_MAP[newPriceId];
+    const plan = PLAN_ID_MAP[newProductId];
 
     if (!plan) {
-      console.error(`Invalid price ID "${newPriceId}" or plan not found in mapping.`);
+      console.error(`Invalid product ID "${newProductId}" or plan not found in mapping.`);
       return;
     }
 
     const { error } = await supabase
-      .from('users')
+      .from('profiles')
       .update({
         subscription_plan: plan,
         // only update subscription_plan
@@ -112,7 +115,7 @@ async function resetQuotaOnBillingCycle(stripeCustomerId, subscriptionId) {
 
     // Reset quota and quota_last_reset at billing cycle renewal
       const { error } = await supabase
-          .from('users')
+          .from('profiles')
           .update({
               is_active: true,
               subscription_quota: quota,
