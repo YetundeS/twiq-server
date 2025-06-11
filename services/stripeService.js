@@ -4,8 +4,8 @@ const { PLAN_QUOTAS, PLAN_ID_MAP } = require("../constants");
 
 async function saveSubscription({ userId, stripeCustomerId, stripeSubscriptionId, productId }) {
   try {
-    const plan = PLAN_ID_MAP[productId]; 
-    const quota = PLAN_QUOTAS[plan];
+    const plan = PLAN_ID_MAP[productId]
+    const quota = PLAN_QUOTAS[plan]
 
     if (!quota) {
       console.error(`Invalid plan "${plan}" passed to saveSubscription`);

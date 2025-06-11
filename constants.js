@@ -34,12 +34,12 @@ const PLAN_QUOTAS = {
 const PLAN_ID_MAP = {
   prod_SLfSE6oRt80Mu7: 'STARTER',
 
-  prod_STjJjYZO8hG8dK: 'PRO',
-  // prod_SLfTLYmEto0mP5: 'PRO',
+  // prod_STjJjYZO8hG8dK: 'PRO', // test
+  prod_SLfTLYmEto0mP5: 'PRO',
 
 
-  prod_STipHjB6zmvkGa: 'ENTERPRISE',
-  // prod_SLfX1eCT161Yxe: 'ENTERPRISE',
+  // prod_STipHjB6zmvkGa: 'ENTERPRISE',  // test
+  prod_SLfX1eCT161Yxe: 'ENTERPRISE',
 };
 
 
