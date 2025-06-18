@@ -1,15 +1,15 @@
 const supabase = require('../config/supabaseClient');
-const { COACH_ASSISTANTS } = require('../constants');
+const { COACH_ASSISTANTS, ASSISTANT_MODEL_NAMES } = require('../constants');
 const openai = require('../openai');
 const { generateCustomSessionTitle, checkIfEnoughQuota } = require('../services/chatMessageService');
 const { encoding_for_model } = require('@dqbd/tiktoken');
+const { hasAccess } = require('../utils/userAccess');
 const encoding = encoding_for_model('gpt-4'); // adjust based on your model
 
 exports.sendMessage = async (req, res) => {
   const { session_id, content, assistantSlug } = req.body;
   const user = req.user
   const user_id = user.id;
-  // console.log('user: ', user)
 
   if (!user?.is_active) {
     return res.status(403).json({ error: 'Subscription inactive' });
@@ -22,6 +22,16 @@ exports.sendMessage = async (req, res) => {
 
   if (!content || !content.trim() || !assistantSlug) {
     return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const subscriptionPlan = user.subscription_plan || "null";
+
+  // ✅ Block access if user doesn't qualify
+  const allowed = hasAccess(subscriptionPlan, ASSISTANT_MODEL_NAMES[assistantSlug]);
+  if (!allowed) {
+    return res.status(403).json({
+      error: `Your current plan (${subscriptionPlan}) does not allow access to the "${ASSISTANT_MODEL_NAMES[assistantSlug]}" model.`,
+    });
   }
 
 

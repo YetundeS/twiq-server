@@ -42,12 +42,24 @@ const PLAN_ID_MAP = {
   prod_SLfX1eCT161Yxe: 'ENTERPRISE',
 };
 
+const ASSISTANT_MODEL_NAMES = {
+  carousel: "Carousel",
+  storyteller: "Storyteller",
+  headlines: "Headlines",
+  linkedin_business: "LinkedIn Your Business",
+  linkedin_personal: "LinkedIn Personal",
+  captions: "Caption",
+  video_scripts: "Video Scripts",
+};
+
+
 
 module.exports = {
   COACH_ASSISTANTS,
   getAssistantId,
   PLAN_QUOTAS,
-  PLAN_ID_MAP
+  PLAN_ID_MAP,
+  ASSISTANT_MODEL_NAMES
 };
 
 
