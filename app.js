@@ -20,9 +20,11 @@ app.use('/api/stripe/webhook', stripeWebhookRoutes);
 
 dotenv.config(); // Load environment variables
 
+const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ["https://twiq.vercel.app", "https://twiq-three.vercel.app", "https://app.twiq.ai"];
+
 // Middleware
 app.use(cors({
-  origin: ["http://localhost:3000", "https://twiq.vercel.app"],
+  origin: allowedOrigins,
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Content-Length", "X-Requested-With"],
@@ -34,7 +36,7 @@ app.use(bodyParser.json());
 app.use(cookieParser());
 
 app.options(/.*/, cors({
-  origin: ["http://localhost:3000", "https://twiq.vercel.app"],
+  origin: allowedOrigins,
   credentials: true,
 }));
 
