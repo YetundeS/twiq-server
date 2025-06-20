@@ -19,7 +19,7 @@ const PLAN_QUOTAS = {
     cached_input_tokens: 199000,
     output_tokens: 99000,
   },
-  PRO_CREATOR: {
+  PRO: {
     input_tokens: 998000,
     cached_input_tokens: 399000,
     output_tokens: 199000,
