@@ -15,21 +15,22 @@ function getAssistantId(slug) {
 
 const PLAN_QUOTAS = {
   STARTER: {
-    input_tokens: 4156000,
-    output_tokens: 831000,
-    cached_input_tokens: 3325000,
+    input_tokens: 498000,
+    cached_input_tokens: 199000,
+    output_tokens: 99000,
   },
-  PRO: {
-    input_tokens: 8322000,
-    output_tokens: 1664000,
-    cached_input_tokens: 6658000,
+  PRO_CREATOR: {
+    input_tokens: 998000,
+    cached_input_tokens: 399000,
+    output_tokens: 199000,
   },
   ENTERPRISE: {
-    input_tokens: 31239000,
-    output_tokens: 6248000,
-    cached_input_tokens: 24991000, 
+    input_tokens: 3749000,
+    cached_input_tokens: 1499000,
+    output_tokens: 749000,
   },
 };
+
 
 const PLAN_ID_MAP = {
   prod_SLfSE6oRt80Mu7: 'STARTER',
