@@ -162,8 +162,6 @@ exports.sendMessage = async (req, res) => {
         const inputTokens = encoding.encode(content).length;
         const outputTokens = encoding.encode(fullAssistantReply).length;
 
-        // console.log('Input tokens:', inputTokens);
-        // console.log('Output tokens:', outputTokens);
 
         // 🔄 Update subscription usage
         const { data: profile, error: profileError } = await supabase
