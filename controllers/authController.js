@@ -238,7 +238,6 @@ exports.verifyEmailToken = async (req, res) => {
       return res.status(500).json({ error: "Failed to confirm email." });
     }
 
-    console.log("Successfully verified email");
     return res.status(200).json({ message: "Email confirmed successfully." });
   } catch (err) {
     console.error("Email verification error:", err);
