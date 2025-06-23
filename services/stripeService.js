@@ -1,5 +1,5 @@
 const stripe = require("../config/stripeClient");
-const supabase = require("../config/supabaseClient");
+const { supabase } = require("../config/supabaseClient");
 const { PLAN_QUOTAS, PLAN_ID_MAP } = require("../constants");
 
 async function saveSubscription({ userId, stripeCustomerId, stripeSubscriptionId, productId }) {

@@ -1,4 +1,4 @@
-const supabase = require('../config/supabaseClient');
+const { supabase } = require('../config/supabaseClient');
 const { COACH_ASSISTANTS, ASSISTANT_MODEL_NAMES } = require('../constants');
 const openai = require('../openai');
 const { generateCustomSessionTitle, checkIfEnoughQuota } = require('../services/chatMessageService');

@@ -1,6 +1,6 @@
 // controller/chats.js
 
-const supabase = require("../config/supabaseClient");
+const { supabase } = require("../config/supabaseClient");
 
 exports.listChatSessionsPerModel = async (req, res) => {
     const { userId, assistantSlug } = req.query;

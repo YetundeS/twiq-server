@@ -1,4 +1,4 @@
-const supabase = require("../config/supabaseClient"); // Ensure you import Supabase
+const { supabase } = require("../config/supabaseClient"); // Ensure you import Supabase
 
 const getUserByAuthId = async (auth_id) => {
     if (!auth_id) {

@@ -1,7 +1,12 @@
-const supabase = require("../config/supabaseClient");
+
 
 const { getUserByAuthId, validateForm } = require("../utils/getUserByAuthId");
 const { getRandomAvatar } = require("../services/authService")
+const { v4: uuidv4 } = require("uuid");
+const stripe = require("../config/stripeClient");
+const { supabase, supabaseAdmin } = require("../config/supabaseClient");
+const confirmEmailTemplate = require("../emails/templates/confirmEmail");
+const resend = require("../config/resendClient");
 
 const exempted_role = [
     "admin",
@@ -11,66 +16,90 @@ const exempted_role = [
 
 // User Signup
 exports.signup = async (req, res) => {
-    const { organization_name, email, user_name, password } = req.body;
+  const { organization_name, email, user_name, password } = req.body;
 
-    // Ensure the user_name is not "admin"
-    if (exempted_role.includes(user_name.toLowerCase())) {
-        return res.status(400).json({ error: `Username ${user_name} is not allowed.` });
+  if (exempted_role.includes(user_name.toLowerCase())) {
+    return res
+      .status(400)
+      .json({ error: `Username ${user_name} is not allowed.` });
+  }
+
+  const validationError = validateForm({
+    organization_name,
+    email,
+    user_name,
+    password,
+  });
+
+  if (validationError) {
+    return res.status(400).json({ error: validationError });
+  }
+
+  try {
+    const { data: existingUser, error: fetchError } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("email", email)
+      .single();
+
+    if (fetchError && fetchError.code !== "PGRST116") {
+      return res
+        .status(500)
+        .json({ error: "Error checking email existence. Try again later." });
     }
 
-    const validationError = validateForm({ organization_name, email, user_name, password });
-
-    if (validationError) {
-        return res.status(400).json({ error: validationError });
+    if (existingUser) {
+      return res.status(400).json({
+        error: "Email already in use. Please log in or use a different email.",
+      });
     }
 
-    try {
-        // Check if email already exists
-        const { data: existingUser, error: fetchError } = await supabase
-            .from("profiles")
-            .select("email")
-            .eq("email", email)
-            .single();
+    const { data, error } = await supabase.auth.signUp({ email, password });
 
-        if (fetchError && fetchError.code !== "PGRST116") {
-            // PGRST116: No rows found (safe to ignore)
-            return res.status(500).json({ error: "Error checking email existence. Try again later." });
-        }
-
-        if (existingUser) {
-            return res.status(400).json({ error: "Email already in use. Please log in or use a different email." });
-        }
-
-        // Create Auth-User
-        const { data, error } = await supabase.auth.signUp({ email, password });
-
-        if (error) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        if (data?.user) {
-            // Generate random avatar
-            const { avatar_url } = getRandomAvatar(user_name);
-
-            // Create user profile
-            const { error: profileError } = await supabase.from("profiles").insert({
-                auth_id: data.user.id,
-                user_name: user_name,
-                email: data.user.email,
-                avatar_url: avatar_url,
-                organization_name
-            });
-
-            if (profileError) {
-                return res.status(500).json({ error: profileError });
-            }
-        }
-
-        return res.status(201).json({ message: "Signup successful. Please verify your email." });
-    } catch (err) {
-        console.error("Signup error:", err);
-        return res.status(500).json({ error: "Internal server error." });
+    if (error) {
+      return res.status(400).json({ error: error.message });
     }
+
+    if (data?.user) {
+      const { avatar_url } = getRandomAvatar(user_name);
+      const token = uuidv4();
+
+      const { error: profileError } = await supabase.from("profiles").insert({
+        auth_id: data.user.id,
+        user_name,
+        email: data.user.email,
+        avatar_url,
+        organization_name,
+        email_verification_token: token,
+        email_confirmed: false, // You must have this column in your schema
+      });
+
+      if (profileError) {
+        return res.status(500).json({ error: profileError.message });
+      }
+
+      const { subject, html } = confirmEmailTemplate({
+        name: user_name,
+        confirmationUrl: `https://app.twiq.ai/verify-email?token=${token}`,
+      });
+
+      await resend.emails.send({
+        from: "Tope from TWIQ <team@mail.twiq.ai>",
+        to: email,
+        subject,
+        html,
+      });
+
+      return res.status(201).json({
+        message: "Signup successful. Please verify your email.",
+      });
+    }
+
+    return res.status(500).json({ error: "Something went wrong during signup." });
+  } catch (err) {
+    console.error("Signup error:", err);
+    return res.status(500).json({ error: "Internal server error." });
+  }
 };
 
 
@@ -84,7 +113,6 @@ exports.login = async (req, res) => {
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-
     if (error) {
         const errorMessage = error.message.toLowerCase();
 
@@ -94,7 +122,7 @@ exports.login = async (req, res) => {
                 type: 'signup',
                 email,
                 options: {
-                    emailRedirectTo: 'https://twiq.vercel.app/auth'
+                    emailRedirectTo: 'https://twiq.vercel.app/'
                 }
             });
 
@@ -113,19 +141,111 @@ exports.login = async (req, res) => {
     }
 
     let user = await getUserByAuthId(data?.user?.id);
-    
-    if(user?.error) {
+
+    if (user?.error) {
         return res.status(400).json({ error: 'Error fetching user.' });
     }
 
+    // ✅ Return both tokens
+    const { access_token, refresh_token } = data.session;
 
-    // Send the access_token in the response body instead of a cookie
     return res.status(200).json({
         message: 'Login successful.',
         user,
-        access_token: data.session.access_token // Send token to frontend
+        access_token,
+        refresh_token,
     });
 };
+
+
+exports.resendEmailConfirmation = async (req, res) => {
+  const user = req.user;
+
+  if (!user?.id || !user?.email || !user?.user_name) {
+    return res.status(400).json({ error: "Incomplete user information." });
+  }
+
+  try {
+    // 1. Generate a new token
+    const newToken = uuidv4();
+
+    // 2. Update token in DB
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ email_verification_token: newToken })
+      .eq("id", user.id);
+
+    if (updateError) {
+      console.error("Token update error:", updateError.message);
+      return res.status(500).json({ error: "Could not update verification token." });
+    }
+
+    // 3. Create email content
+    const { subject, html } = confirmEmailTemplate({
+      name: user.user_name,
+      confirmationUrl: `https://app.twiq.ai/verify-email?token=${newToken}`,
+    });
+
+    // 4. Send email via Resend
+    await resend.emails.send({
+      from: "Tope from TWIQ <team@mail.twiq.ai>",
+      to: user.email,
+      subject,
+      html,
+    });
+
+    return res.status(200).json({ message: "Confirmation email sent." });
+  } catch (err) {
+    console.error("Resend email error:", err);
+    return res.status(500).json({ error: "Failed to resend confirmation email." });
+  }
+};
+
+
+exports.verifyEmailToken = async (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return res.status(400).json({ error: "Token is required." });
+  }
+
+  try {
+    // Find profile with matching token
+    const { data: profile, error: fetchError } = await supabase
+      .from("profiles")
+      .select("id, email_confirmed, email_verification_token")
+      .eq("email_verification_token", token)
+      .single();
+
+    if (fetchError || !profile) {
+      return res.status(404).json({ error: "Invalid or expired token." });
+    }
+
+    if (profile.email_confirmed) {
+      return res.status(200).json({ message: "Email already confirmed." });
+    }
+
+    // Update the user's profile
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({
+        email_confirmed: true,
+        email_verification_token: null,
+      })
+      .eq("id", profile.id);
+
+    if (updateError) {
+      return res.status(500).json({ error: "Failed to confirm email." });
+    }
+
+    console.log("Successfully verified email");
+    return res.status(200).json({ message: "Email confirmed successfully." });
+  } catch (err) {
+    console.error("Email verification error:", err);
+    return res.status(500).json({ error: "Internal server error." });
+  }
+};
+
 
 
 
@@ -176,4 +296,126 @@ exports.resetPassword = async (req, res) => {
 // fetch user
 exports.getUser = async (req, res) => {
     return res.status(200).json({ user: req.user });
+};
+
+
+exports.uploadProfilePicture = async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        const file = req.file;
+
+        if (!file || !userId) {
+            return res.status(400).json({ error: "Missing file or user" });
+        }
+
+        const fileName = `${uuidv4()}_${file.originalname}`;
+        const filePath = `avatar/${userId}/${fileName}`; // No "private/" needed
+
+        const { error: uploadError } = await supabase.storage
+            .from("avatar")
+            .upload(filePath, file.buffer, {
+                contentType: file.mimetype,
+                upsert: true,
+            });
+
+        if (uploadError) {
+            return res.status(500).json({ error: "Upload failed", details: uploadError });
+        }
+
+        const { data: publicUrlData } = supabase.storage
+            .from("avatar")
+            .getPublicUrl(filePath);
+
+        const avatarUrl = publicUrlData?.publicUrl;
+
+        const { error: updateError } = await supabase
+            .from("profiles")
+            .update({ avatar_url: avatarUrl })
+            .eq("id", userId);
+
+        if (updateError) {
+            return res.status(500).json({ error: "Could not update profile", details: updateError });
+        }
+
+        return res.status(200).json({ avatar_url: avatarUrl });
+    } catch (err) {
+        return res.status(500).json({ error: "Unexpected server error", message: err.message });
+    }
+};
+
+
+
+exports.deleteAccount = async (req, res) => {
+  const userId = req.user?.id;
+  const authId = req.user?.auth_id;
+
+  if (!userId || !authId) {
+    return res.status(400).json({ error: 'Missing user identification.' });
+  }
+
+  console.log('authId: ', authId)
+
+  try {
+    // 1. Fetch stripe_customer_id before anything
+    const { data: profileData, error: fetchProfileError } = await supabase
+      .from('profiles')
+      .select('stripe_customer_id')
+      .eq('id', userId)
+      .single();
+
+    if (fetchProfileError) throw new Error("Failed to fetch profile data");
+    const stripeCustomerId = profileData?.stripe_customer_id;
+
+    // 2. Delete Stripe customer first
+    if (stripeCustomerId) {
+      // cancel subscriptions before deleting customer
+      const subscriptions = await stripe.subscriptions.list({ customer: stripeCustomerId });
+      for (const sub of subscriptions.data) {
+        await stripe.subscriptions.cancel(sub.id);
+      }
+
+      await stripe.customers.del(stripeCustomerId);
+    }
+
+    // 3. Delete chat sessions
+    const { error: sessionError } = await supabase
+      .from('chat_sessions')
+      .delete()
+      .match({ user_id: userId });
+    if (sessionError) throw new Error("Failed to delete chat sessions");
+
+    // 4. Delete avatar files
+    const { data: files, error: listError } = await supabase.storage
+      .from("avatar")
+      .list(`avatar/${userId}`);
+    if (listError) {
+      console.warn("Avatar list fetch failed:", listError.message);
+    }
+
+    if (files?.length) {
+      const filePaths = files.map((file) => `avatar/${userId}/${file.name}`);
+      const { error: removeError } = await supabase.storage
+        .from("avatar")
+        .remove(filePaths);
+      if (removeError) {
+        console.warn("Avatar delete failed:", removeError.message);
+      }
+    }
+
+    // 5. Delete profile row
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+    if (profileError) throw new Error("Failed to delete profile");
+
+    // 6. Delete user from Supabase Auth
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(authId);
+    if (authError) throw new Error("Failed to delete Supabase Auth user: ");
+
+    return res.status(200).json({ message: 'Account deleted successfully.' });
+  } catch (error) {
+    console.error("Delete account error:", error);
+    return res.status(500).json({ error: error.message || "Internal server error." });
+  }
 };
