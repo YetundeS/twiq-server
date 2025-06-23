@@ -54,24 +54,24 @@ exports.signup = async (req, res) => {
       });
     }
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data: signupData, error: signupError } = await supabase.auth.signUp({ email, password });
 
-    if (error) {
-      return res.status(400).json({ error: error.message });
+    if (signupError) {
+      return res.status(400).json({ error: signupError.message });
     }
 
-    if (data?.user) {
+    if (signupData?.user) {
       const { avatar_url } = getRandomAvatar(user_name);
       const token = uuidv4();
 
       const { error: profileError } = await supabase.from("profiles").insert({
-        auth_id: data.user.id,
+        auth_id: signupData.user.id,
         user_name,
-        email: data.user.email,
+        email: signupData.user.email,
         avatar_url,
         organization_name,
         email_verification_token: token,
-        email_confirmed: false, // You must have this column in your schema
+        email_confirmed: false,
       });
 
       if (profileError) {
@@ -90,8 +90,35 @@ exports.signup = async (req, res) => {
         html,
       });
 
-      return res.status(201).json({
-        message: "Signup successful. Please verify your email.",
+      // ⚠️ Attempt auto-login
+      const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (loginError) {
+        return res.status(400).json({ error: loginError.message });
+      }
+
+      if (!loginData.session) {
+        return res.status(400).json({
+          error: "No session returned. Please verify your email to continue.",
+        });
+      }
+
+      const user = await getUserByAuthId(loginData?.user?.id);
+
+      if (user?.error) {
+        return res.status(400).json({ error: "Error fetching user." });
+      }
+
+      const { access_token, refresh_token } = loginData.session;
+
+      return res.status(200).json({
+        message: "Signup and login successful.",
+        user,
+        access_token,
+        refresh_token,
       });
     }
 
@@ -101,6 +128,7 @@ exports.signup = async (req, res) => {
     return res.status(500).json({ error: "Internal server error." });
   }
 };
+
 
 
 // User Login
@@ -115,28 +143,6 @@ exports.login = async (req, res) => {
 
     if (error) {
         const errorMessage = error.message.toLowerCase();
-
-        // 🔁 Auto-resend confirmation email if not confirmed
-        if (errorMessage.includes('email not confirmed')) {
-            const { error: resendError } = await supabase.auth.resend({
-                type: 'signup',
-                email,
-                options: {
-                    emailRedirectTo: 'https://twiq.vercel.app/'
-                }
-            });
-
-            if (resendError) {
-                return res.status(400).json({
-                    error: 'Failed to resend confirmation email. ' + resendError.message
-                });
-            }
-
-            return res.status(400).json({
-                error: 'Email not confirmed. A new confirmation email has been sent.'
-            });
-        }
-
         return res.status(400).json({ error: error.message });
     }
 
