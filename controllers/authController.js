@@ -130,7 +130,6 @@ exports.signup = async (req, res) => {
 };
 
 
-
 // User Login
 exports.login = async (req, res) => {
     const { email, password } = req.body;
@@ -142,14 +141,20 @@ exports.login = async (req, res) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-        const errorMessage = error.message.toLowerCase();
         return res.status(400).json({ error: error.message });
     }
 
     let user = await getUserByAuthId(data?.user?.id);
 
-    if (user?.error) {
+    if (user?.error || !user) {
         return res.status(400).json({ error: 'Error fetching user.' });
+    }
+
+    // ❌ Block deleted accounts from logging in
+    if (user.is_deleted) {
+        return res.status(403).json({
+            error: 'Your account has been deactivated. Contact support for assistance.',
+        });
     }
 
     // ✅ Return both tokens
@@ -162,6 +167,7 @@ exports.login = async (req, res) => {
         refresh_token,
     });
 };
+
 
 
 exports.resendEmailConfirmation = async (req, res) => {
@@ -350,77 +356,99 @@ exports.uploadProfilePicture = async (req, res) => {
 
 
 
-exports.deleteAccount = async (req, res) => {
-  const userId = req.user?.id;
-  const authId = req.user?.auth_id;
+// exports.deleteAccount = async (req, res) => {
+//   const userId = req.user?.id;
+//   const authId = req.user?.auth_id;
 
-  if (!userId || !authId) {
-    return res.status(400).json({ error: 'Missing user identification.' });
+//   if (!userId || !authId) {
+//     return res.status(400).json({ error: 'Missing user identification.' });
+//   }
+
+
+//   try {
+//     // 3. Delete chat sessions
+//     const { error: sessionError } = await supabase
+//       .from('chat_sessions')
+//       .delete()
+//       .match({ user_id: userId });
+//     if (sessionError) throw new Error("Failed to delete chat sessions");
+
+//     // 4. Delete avatar files
+//     const { data: files, error: listError } = await supabase.storage
+//       .from("avatar")
+//       .list(`avatar/${userId}`);
+//     if (listError) {
+//       console.warn("Avatar list fetch failed:", listError.message);
+//     }
+
+//     if (files?.length) {
+//       const filePaths = files.map((file) => `avatar/${userId}/${file.name}`);
+//       const { error: removeError } = await supabase.storage
+//         .from("avatar")
+//         .remove(filePaths);
+//       if (removeError) {
+//         console.warn("Avatar delete failed:", removeError.message);
+//       }
+//     }
+
+//     // 5. Delete profile row
+//     const { error: profileError } = await supabase
+//       .from('profiles')
+//       .delete()
+//       .eq('id', userId);
+//     if (profileError) throw new Error("Failed to delete profile");
+
+//     // 6. Delete user from Supabase Auth
+//     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(authId);
+//     if (authError) throw new Error("Failed to delete Supabase Auth user: ");
+
+//     return res.status(200).json({ message: 'Account deleted successfully.' });
+//   } catch (error) {
+//     console.error("Delete account error:", error);
+//     return res.status(500).json({ error: error.message || "Internal server error." });
+//   }
+// };
+
+exports.softDeleteAccount = async (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(400).json({ error: 'Missing user ID.' });
   }
 
-  console.log('authId: ', authId)
-
   try {
-    // 1. Fetch stripe_customer_id before anything
+    // 1. Fetch stripe_customer_id
     const { data: profileData, error: fetchProfileError } = await supabase
       .from('profiles')
       .select('stripe_customer_id')
       .eq('id', userId)
       .single();
 
-    if (fetchProfileError) throw new Error("Failed to fetch profile data");
+    if (fetchProfileError) throw new Error("Failed to fetch profile");
     const stripeCustomerId = profileData?.stripe_customer_id;
 
-    // 2. Delete Stripe customer first
+    // 2. Cancel Stripe subscriptions
     if (stripeCustomerId) {
-      // cancel subscriptions before deleting customer
       const subscriptions = await stripe.subscriptions.list({ customer: stripeCustomerId });
       for (const sub of subscriptions.data) {
         await stripe.subscriptions.cancel(sub.id);
       }
-
-      await stripe.customers.del(stripeCustomerId);
     }
 
-    // 3. Delete chat sessions
-    const { error: sessionError } = await supabase
-      .from('chat_sessions')
-      .delete()
-      .match({ user_id: userId });
-    if (sessionError) throw new Error("Failed to delete chat sessions");
-
-    // 4. Delete avatar files
-    const { data: files, error: listError } = await supabase.storage
-      .from("avatar")
-      .list(`avatar/${userId}`);
-    if (listError) {
-      console.warn("Avatar list fetch failed:", listError.message);
-    }
-
-    if (files?.length) {
-      const filePaths = files.map((file) => `avatar/${userId}/${file.name}`);
-      const { error: removeError } = await supabase.storage
-        .from("avatar")
-        .remove(filePaths);
-      if (removeError) {
-        console.warn("Avatar delete failed:", removeError.message);
-      }
-    }
-
-    // 5. Delete profile row
-    const { error: profileError } = await supabase
+    // 3. Soft delete: mark as deleted and log timestamp
+    const { error: updateError } = await supabase
       .from('profiles')
-      .delete()
+      .update({
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+      })
       .eq('id', userId);
-    if (profileError) throw new Error("Failed to delete profile");
 
-    // 6. Delete user from Supabase Auth
-    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(authId);
-    if (authError) throw new Error("Failed to delete Supabase Auth user: ");
+    if (updateError) throw new Error("Failed to update profile");
 
-    return res.status(200).json({ message: 'Account deleted successfully.' });
+    return res.status(200).json({ message: 'Account scheduled for deletion in 1 year.' });
   } catch (error) {
-    console.error("Delete account error:", error);
+    console.error("Soft delete error:", error);
     return res.status(500).json({ error: error.message || "Internal server error." });
   }
 };
