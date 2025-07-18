@@ -62,11 +62,8 @@ exports.sendMessage = async (req, res) => {
 
     // Upload all files to OpenAI if present
     if (uploadedFiles.length > 0) {
-      console.log(`Uploading ${uploadedFiles.length} files to OpenAI...`);
-
       for (const file of uploadedFiles) {
         try {
-          console.log(`Uploading file: ${file.originalname} (${file.size} bytes)`);
 
           // ✅ Use file stream from disk - much more reliable
           const fileStream = fs.createReadStream(file.path);
@@ -83,10 +80,8 @@ exports.sendMessage = async (req, res) => {
             type: file.mimetype,
             tempPath: file.path, // Store temp path for cleanup
           });
-
-          console.log(`File uploaded to OpenAI: ${file.originalname} -> ${fileUploadResponse.id}`);
         } catch (fileError) {
-          console.error(`Error uploading file ${file.originalname} to OpenAI:`, fileError);
+          // log fileError
 
           // Clean up temp file on error
           if (fs.existsSync(file.path)) {
@@ -110,7 +105,7 @@ exports.sendMessage = async (req, res) => {
         const customTitle = await generateCustomSessionTitle(titleContent);
         if (customTitle) generatedTitle = customTitle;
       } catch (titleGenError) {
-        console.warn('Title generation failed, using fallback:', titleGenError.message);
+        // use fallback title if error
       }
 
       // Create thread with or without files
@@ -316,7 +311,7 @@ exports.sendMessage = async (req, res) => {
 
     // Handle disconnection after the loop
     if (clientDisconnected && fullAssistantReply.trim()) {
-      console.log('Client disconnected, saving partial reply...');
+      // console.log('Client disconnected, saving partial reply...');
 
       await supabase.from('chat_messages').insert([
         {
@@ -328,40 +323,18 @@ exports.sendMessage = async (req, res) => {
       ]);
     }
 
-    // Clean up OpenAI files after processing
-    // if (openaiFileIds.length > 0) {
-    //   // Clean up local temp files
-    //   for (const fileInfo of openaiFileIds) {
-    //     if (fileInfo.tempPath && fs.existsSync(fileInfo.tempPath)) {
-    //       try {
-    //         fs.unlinkSync(fileInfo.tempPath);
-    //         console.log(`Cleaned up temp file: ${fileInfo.tempPath}`);
-    //       } catch (deleteError) {
-    //         console.warn(`Failed to delete temp file ${fileInfo.tempPath}:`, deleteError.message);
-    //       }
-    //     }
-    //   }
-
-    //   // Clean up OpenAI files after processing (optional)
-    //   for (const fileInfo of openaiFileIds) {
-    //     try {
-    //       await openai.files.del(fileInfo.id);
-    //       console.log(`Cleaned up OpenAI file: ${fileInfo.name} (${fileInfo.id})`);
-    //     } catch (deleteError) {
-    //       console.warn(`Failed to delete OpenAI file ${fileInfo.name}:`, deleteError.message);
-    //     }
-    //   }
-    // }
-
   } catch (err) {
-    console.error('Error during stream:', err);
     if (!res.headersSent) {
       res.status(500);
       res.write(`data: ${JSON.stringify({ type: 'ERROR', message: err.message })}\n\n`);
       res.end();
     }
   } finally {
-    // ALWAYS clean up files, regardless of success or failure
-    await cleanupFiles(openaiFileIds);
+    // ALWAYS clean up files
+    if (openaiFileIds.length > 0) {
+      cleanupFiles(openaiFileIds).catch(cleanupError => {
+        // log cleanupError
+      });
+    }
   }
 };
