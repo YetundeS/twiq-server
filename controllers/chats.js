@@ -79,7 +79,6 @@ exports.getMessagesBySession = async (req, res) => {
       return res.status(404).json({ error: 'Chat session not found or does not match assistantSlug' });
     }
 
-
     // ✅ Step 2: Fetch messages
     const { data: messages, error: messageError } = await supabase
       .from('chat_messages')
@@ -89,13 +88,43 @@ exports.getMessagesBySession = async (req, res) => {
 
     if (messageError) throw messageError;
 
-    return res.status(200).json({ messages });
+    // ✅ Step 3: Fetch all files for this session in one query
+    const { data: sessionFiles, error: filesError } = await supabase
+      .from('chat_files')
+      .select('message_id, file_name, file_size, file_type, openai_file_id')
+      .eq('session_id', sessionId)
+      .eq('user_id', user_id); // Extra security check
+
+    if (filesError) throw filesError;
+
+    // ✅ Step 4: Group files by message_id for efficient lookup
+    const filesByMessageId = {};
+    if (sessionFiles && sessionFiles.length > 0) {
+      sessionFiles.forEach(file => {
+        if (!filesByMessageId[file.message_id]) {
+          filesByMessageId[file.message_id] = [];
+        }
+        filesByMessageId[file.message_id].push({
+          name: file.file_name,
+          size: file.file_size,
+          type: file.file_type,
+          openai_file_id: file.openai_file_id
+        });
+      });
+    }
+
+    // ✅ Step 5: Add linkedFiles property to each message
+    const messagesWithFiles = messages.map(message => ({
+      ...message,
+      linkedFiles: filesByMessageId[message.id] || []
+    }));
+
+    return res.status(200).json({ messages: messagesWithFiles });
   } catch (err) {
     console.error('Error fetching messages:', err.message);
     return res.status(500).json({ error: 'Failed to fetch messages' });
   }
 };
-
 
 
 

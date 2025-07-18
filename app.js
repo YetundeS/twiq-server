@@ -5,8 +5,8 @@ const bodyParser = require('body-parser');
 
 const userRoutes = require('./routes/userRoutes.js');
 const suggestPromptsRoutes = require('./routes/suggestPromptsRoutes.js');
-const chatsRoutes = require('./routes/chats.js');
-const chatMessagesRoutes = require('./routes/chatMessages.js');
+const chatsRoutes = require('./routes/chatsRoutes.js');
+const chatMessagesRoutes = require('./routes/chatMessagesRoutes.js');
 const stripeRoutes = require('./routes/stripeRoutes.js');
 const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes.js');
 const cookieParser = require('cookie-parser');

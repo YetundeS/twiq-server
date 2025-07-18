@@ -356,59 +356,6 @@ exports.uploadProfilePicture = async (req, res) => {
 
 
 
-// exports.deleteAccount = async (req, res) => {
-//   const userId = req.user?.id;
-//   const authId = req.user?.auth_id;
-
-//   if (!userId || !authId) {
-//     return res.status(400).json({ error: 'Missing user identification.' });
-//   }
-
-
-//   try {
-//     // 3. Delete chat sessions
-//     const { error: sessionError } = await supabase
-//       .from('chat_sessions')
-//       .delete()
-//       .match({ user_id: userId });
-//     if (sessionError) throw new Error("Failed to delete chat sessions");
-
-//     // 4. Delete avatar files
-//     const { data: files, error: listError } = await supabase.storage
-//       .from("avatar")
-//       .list(`avatar/${userId}`);
-//     if (listError) {
-//       console.warn("Avatar list fetch failed:", listError.message);
-//     }
-
-//     if (files?.length) {
-//       const filePaths = files.map((file) => `avatar/${userId}/${file.name}`);
-//       const { error: removeError } = await supabase.storage
-//         .from("avatar")
-//         .remove(filePaths);
-//       if (removeError) {
-//         console.warn("Avatar delete failed:", removeError.message);
-//       }
-//     }
-
-//     // 5. Delete profile row
-//     const { error: profileError } = await supabase
-//       .from('profiles')
-//       .delete()
-//       .eq('id', userId);
-//     if (profileError) throw new Error("Failed to delete profile");
-
-//     // 6. Delete user from Supabase Auth
-//     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(authId);
-//     if (authError) throw new Error("Failed to delete Supabase Auth user: ");
-
-//     return res.status(200).json({ message: 'Account deleted successfully.' });
-//   } catch (error) {
-//     console.error("Delete account error:", error);
-//     return res.status(500).json({ error: error.message || "Internal server error." });
-//   }
-// };
-
 exports.softDeleteAccount = async (req, res) => {
   const userId = req.user?.id;
 
