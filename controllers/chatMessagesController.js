@@ -68,8 +68,9 @@ exports.sendMessage = async (req, res) => {
       // Prepare text file uploads
       textFiles.forEach(file => {
         const uploadPromise = (async () => {
+          let fileStream = null;
           try {
-            const fileStream = fs.createReadStream(file.path);
+            fileStream = fs.createReadStream(file.path);
             const fileUploadResponse = await openai.files.create({
               file: fileStream,
               purpose: 'assistants',
@@ -97,7 +98,9 @@ exports.sendMessage = async (req, res) => {
             };
           } finally {
             // Ensure stream is closed
-            fileStream.destroy();
+            if (fileStream && !fileStream.destroyed) {
+              fileStream.destroy();
+            }
           }
         })();
         
@@ -109,6 +112,7 @@ exports.sendMessage = async (req, res) => {
         const uploadPromise = (async () => {
           let filePathToUpload = file.path;
           let compressedPath = null;
+          let fileStream = null;
           
           try {
             // Check if image should be compressed
@@ -125,7 +129,7 @@ exports.sendMessage = async (req, res) => {
               }
             }
             
-            const fileStream = fs.createReadStream(filePathToUpload);
+            fileStream = fs.createReadStream(filePathToUpload);
             const fileUploadResponse = await openai.files.create({
               file: fileStream,
               purpose: 'vision',
@@ -168,7 +172,7 @@ exports.sendMessage = async (req, res) => {
       // Process results
       const failedUploads = [];
       
-      uploadResults.forEach(result => {
+      uploadResults.forEach(async (result) => {
         if (result.success) {
           if (result.type === 'text') {
             textFileIds.push(result.data);
@@ -205,6 +209,7 @@ exports.sendMessage = async (req, res) => {
         });
       }
     } catch (err) {
+      console.log('Failed to process uploaded files: ', err)
       // Clean up all temp files on general error (async)
       await Promise.all(tempFilePaths.map(async (path) => {
         try {
@@ -273,6 +278,7 @@ exports.sendMessage = async (req, res) => {
 
       const thread = await openai.beta.threads.create(threadOptions);
       threadId = thread.id;
+
 
       const { data: newSession, error: sessionError } = await supabase
         .from('chat_sessions')
@@ -408,6 +414,9 @@ exports.sendMessage = async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+    res.setHeader('Content-Encoding', 'identity'); // Disable compression
+    res.setHeader('Transfer-Encoding', 'chunked'); // Enable chunked transfer
+    req.headers['x-no-compression'] = 'true'; // Signal to skip compression
     res.flushHeaders();
 
     // Send keep-alive pings every 5 seconds
@@ -435,6 +444,12 @@ exports.sendMessage = async (req, res) => {
       
       return new Promise((resolve) => {
         const canContinue = res.write(data);
+        
+        // Immediately flush the data to client
+        if (typeof res.flush === 'function') {
+          res.flush();
+        }
+        
         if (!canContinue) {
           // Handle backpressure - wait for drain event
           res.once('drain', () => resolve(true));
@@ -539,6 +554,7 @@ exports.sendMessage = async (req, res) => {
     }
 
   } catch (err) {
+    console.log('error: ', err)
     if (!res.headersSent) {
       res.status(500);
       res.write(`data: ${JSON.stringify({ type: 'ERROR', message: err.message })}\n\n`);

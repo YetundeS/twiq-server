@@ -1,5 +1,8 @@
 const rateLimit = require('express-rate-limit');
 
+// Import the IPv6-safe key generator helper
+const { ipKeyGenerator } = require('express-rate-limit');
+
 // Create different rate limiters for different endpoints
 
 // General API rate limiter
@@ -12,8 +15,8 @@ const generalLimiter = rateLimit({
   // Store in memory (default)
   skipSuccessfulRequests: false,
   keyGenerator: (req) => {
-    // Use user ID if authenticated, otherwise use IP
-    return req.user?.id || req.ip;
+    // Use user ID if authenticated, otherwise use IPv6-safe IP
+    return req.user?.id || ipKeyGenerator(req);
   }
 });
 
@@ -27,7 +30,8 @@ const chatMessageLimiter = rateLimit({
   skipFailedRequests: true, // Don't count failed requests
   keyGenerator: (req) => {
     // Always use user ID for authenticated endpoints
-    return req.user?.id || 'anonymous';
+    // Fallback to IPv6-safe IP for anonymous users
+    return req.user?.id || ipKeyGenerator(req);
   },
   handler: (req, res) => {
     res.status(429).json({
@@ -45,7 +49,8 @@ const fileUploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
-    return req.user?.id || req.ip;
+    // Use user ID if authenticated, otherwise use IPv6-safe IP
+    return req.user?.id || ipKeyGenerator(req);
   }
 });
 
@@ -58,8 +63,8 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Only count failed attempts
   keyGenerator: (req) => {
-    // Use IP for auth endpoints
-    return req.ip;
+    // Use IPv6-safe IP for auth endpoints (security-focused)
+    return ipKeyGenerator(req);
   }
 });
 
@@ -68,9 +73,49 @@ const createCustomLimiter = (options) => {
   return rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
-    ...options
+    // Default keyGenerator that handles IPv6 properly
+    keyGenerator: (req) => {
+      return req.user?.id || ipKeyGenerator(req);
+    },
+    ...options // Allow overriding default options
   });
 };
+
+// Alternative approach: Separate IP and User limiters for better control
+const createDualLimiter = (ipOptions, userOptions) => {
+  const ipLimiter = rateLimit({
+    ...ipOptions,
+    keyGenerator: ipKeyGenerator, // Always use IP with IPv6 support
+  });
+
+  const userLimiter = rateLimit({
+    ...userOptions,
+    keyGenerator: (req) => req.user?.id || 'anonymous',
+    skip: (req) => !req.user?.id, // Skip for unauthenticated users
+  });
+
+  // Return middleware that applies both limiters
+  return (req, res, next) => {
+    ipLimiter(req, res, (err) => {
+      if (err) return next(err);
+      userLimiter(req, res, next);
+    });
+  };
+};
+
+// Example usage of dual limiter for high-security endpoints
+const secureEndpointLimiter = createDualLimiter(
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 1000, // Higher IP limit
+    message: 'Too many requests from this IP address'
+  },
+  {
+    windowMs: 15 * 60 * 1000,
+    max: 100, // Lower user limit
+    message: 'Too many requests from this user account'
+  }
+);
 
 // Per-user API quota tracker (for subscription-based limits)
 const subscriptionQuotaCheck = async (req, res, next) => {
@@ -83,8 +128,8 @@ const subscriptionQuotaCheck = async (req, res, next) => {
     const quota = user.subscription_quota || { input_tokens: 0, output_tokens: 0 };
 
     // Calculate usage percentage
-    const inputUsagePercent = (usage.input_tokens_used / quota.input_tokens) * 100;
-    const outputUsagePercent = (usage.output_tokens_used / quota.output_tokens) * 100;
+    const inputUsagePercent = quota.input_tokens > 0 ? (usage.input_tokens_used / quota.input_tokens) * 100 : 0;
+    const outputUsagePercent = quota.output_tokens > 0 ? (usage.output_tokens_used / quota.output_tokens) * 100 : 0;
 
     // Add headers to inform client about quota usage
     res.setHeader('X-Quota-Input-Used', usage.input_tokens_used);
@@ -95,6 +140,19 @@ const subscriptionQuotaCheck = async (req, res, next) => {
     // Warn if approaching limits (90% used)
     if (inputUsagePercent > 90 || outputUsagePercent > 90) {
       res.setHeader('X-Quota-Warning', 'Approaching subscription limits');
+    }
+
+    // Check if quota exceeded
+    if (inputUsagePercent >= 100 || outputUsagePercent >= 100) {
+      return res.status(429).json({
+        error: 'Subscription quota exceeded',
+        usage: {
+          input_used: usage.input_tokens_used,
+          input_limit: quota.input_tokens,
+          output_used: usage.output_tokens_used,
+          output_limit: quota.output_tokens
+        }
+      });
     }
 
     next();
@@ -111,5 +169,7 @@ module.exports = {
   fileUploadLimiter,
   authLimiter,
   createCustomLimiter,
+  createDualLimiter,
+  secureEndpointLimiter,
   subscriptionQuotaCheck
 };

@@ -24,7 +24,7 @@ dotenv.config(); // Load environment variables
 
 const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ["https://twiq.vercel.app", "https://twiq-three.vercel.app", "https://app.twiq.ai"];
 
-// Enable compression for all responses
+// Enable compression for all responses except streaming endpoints
 app.use(compression({
   // Enable compression for responses larger than 1KB
   threshold: 1024,
@@ -36,7 +36,18 @@ app.use(compression({
       // Don't compress responses if this request header is present
       return false;
     }
-    // Use compression for text-based responses
+    
+    // Don't compress Server-Sent Events (SSE) streams
+    if (req.url.includes('/api/chat-message/send')) {
+      return false;
+    }
+    
+    // Don't compress if Content-Type is text/event-stream
+    if (res.getHeader('Content-Type') === 'text/event-stream') {
+      return false;
+    }
+    
+    // Use compression for other text-based responses
     return compression.filter(req, res);
   }
 }));
