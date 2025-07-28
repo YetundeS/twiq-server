@@ -2,10 +2,11 @@ const { supabase } = require('../config/supabaseClient');
 const { COACH_ASSISTANTS, ASSISTANT_MODEL_NAMES } = require('../constants');
 const openai = require('../openai');
 const { generateCustomSessionTitle, checkIfEnoughQuota, categorizeFiles } = require('../services/chatMessageService');
-const { encoding_for_model } = require('@dqbd/tiktoken');
+const { countTokens } = require('../utils/tokenEncoder');
 const { hasAccess } = require('../utils/userAccess');
-const encoding = encoding_for_model('gpt-4o'); // adjust based on your model
+const { compressImage, isCompressibleImage, getOptimalCompressionSettings } = require('../utils/imageCompressor');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 
 
 
@@ -61,9 +62,12 @@ exports.sendMessage = async (req, res) => {
     const { textFiles, imageFiles } = categorizeFiles(uploadedFiles);
     
     try {
-      // Upload text files to OpenAI (these will use file_search)
-      if (textFiles.length > 0) {
-        for (const file of textFiles) {
+      // Prepare all file uploads in parallel
+      const uploadPromises = [];
+      
+      // Prepare text file uploads
+      textFiles.forEach(file => {
+        const uploadPromise = (async () => {
           try {
             const fileStream = fs.createReadStream(file.path);
             const fileUploadResponse = await openai.files.create({
@@ -71,54 +75,145 @@ exports.sendMessage = async (req, res) => {
               purpose: 'assistants',
             });
 
-            textFileIds.push({
-              id: fileUploadResponse.id,
-              name: file.originalname,
-              size: file.size,
-              type: file.mimetype,
-            });
-
             tempFilePaths.push(file.path);
+            
+            return {
+              type: 'text',
+              success: true,
+              data: {
+                id: fileUploadResponse.id,
+                name: file.originalname,
+                size: file.size,
+                type: file.mimetype,
+              }
+            };
           } catch (fileError) {
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
-            }
-            return res.status(500).json({
-              error: `Failed to upload text file "${file.originalname}": ${fileError.message}`
-            });
+            return {
+              type: 'text',
+              success: false,
+              error: fileError.message,
+              fileName: file.originalname,
+              filePath: file.path
+            };
+          } finally {
+            // Ensure stream is closed
+            fileStream.destroy();
           }
-        }
-      }
+        })();
+        
+        uploadPromises.push(uploadPromise);
+      });
 
-      // Upload image files to OpenAI (these will be in message content)
-      if (imageFiles.length > 0) {
-        for (const file of imageFiles) {
+      // Prepare image file uploads with compression
+      imageFiles.forEach(file => {
+        const uploadPromise = (async () => {
+          let filePathToUpload = file.path;
+          let compressedPath = null;
+          
           try {
-            const fileStream = fs.createReadStream(file.path);
+            // Check if image should be compressed
+            if (isCompressibleImage(file.mimetype) && file.size > 1024 * 1024) { // Compress if > 1MB
+              const compressionSettings = getOptimalCompressionSettings(file.size, file.mimetype);
+              const compressionResult = await compressImage(file.path, compressionSettings);
+              
+              if (compressionResult.success) {
+                filePathToUpload = compressionResult.compressedPath;
+                compressedPath = compressionResult.compressedPath;
+                tempFilePaths.push(compressedPath);
+                
+                console.log(`Compressed ${file.originalname}: ${compressionResult.originalSize} -> ${compressionResult.compressedSize} (${compressionResult.compressionRatio}% reduction)`);
+              }
+            }
+            
+            const fileStream = fs.createReadStream(filePathToUpload);
             const fileUploadResponse = await openai.files.create({
               file: fileStream,
               purpose: 'vision',
             });
 
-            imageFileIds.push({
-              id: fileUploadResponse.id,
-              name: file.originalname,
-              size: file.size,
-              type: file.mimetype,
-            });
-
             tempFilePaths.push(file.path);
+            
+            return {
+              type: 'image',
+              success: true,
+              data: {
+                id: fileUploadResponse.id,
+                name: file.originalname,
+                size: compressedPath ? (await fsPromises.stat(compressedPath)).size : file.size,
+                type: file.mimetype,
+              }
+            };
           } catch (fileError) {
-            if (fs.existsSync(file.path)) {
-              fs.unlinkSync(file.path);
+            return {
+              type: 'image',
+              success: false,
+              error: fileError.message,
+              fileName: file.originalname,
+              filePath: file.path
+            };
+          } finally {
+            // Ensure stream is closed
+            if (fileStream && !fileStream.destroyed) {
+              fileStream.destroy();
             }
-            return res.status(500).json({
-              error: `Failed to upload image file "${file.originalname}": ${fileError.message}`
-            });
+          }
+        })();
+        
+        uploadPromises.push(uploadPromise);
+      });
+
+      // Execute all uploads in parallel
+      const uploadResults = await Promise.all(uploadPromises);
+
+      // Process results
+      const failedUploads = [];
+      
+      uploadResults.forEach(result => {
+        if (result.success) {
+          if (result.type === 'text') {
+            textFileIds.push(result.data);
+          } else {
+            imageFileIds.push(result.data);
+          }
+        } else {
+          failedUploads.push(result);
+          // Clean up failed upload (async)
+          try {
+            await fsPromises.access(result.filePath);
+            await fsPromises.unlink(result.filePath);
+          } catch (err) {
+            // File might already be deleted
           }
         }
+      });
+
+      // If any uploads failed, return error
+      if (failedUploads.length > 0) {
+        // Clean up all temp files (async)
+        await Promise.all(tempFilePaths.map(async (path) => {
+          try {
+            await fsPromises.access(path);
+            await fsPromises.unlink(path);
+          } catch (err) {
+            // File might already be deleted
+          }
+        }));
+        
+        const errorMessages = failedUploads.map(f => `${f.fileName}: ${f.error}`).join(', ');
+        return res.status(500).json({
+          error: `Failed to upload files: ${errorMessages}`
+        });
       }
     } catch (err) {
+      // Clean up all temp files on general error (async)
+      await Promise.all(tempFilePaths.map(async (path) => {
+        try {
+          await fsPromises.access(path);
+          await fsPromises.unlink(path);
+        } catch (err) {
+          // File might already be deleted
+        }
+      }));
       return res.status(500).json({ error: 'Failed to process uploaded files' });
     }
   }
@@ -308,26 +403,61 @@ exports.sendMessage = async (req, res) => {
 
     const run = await openai.beta.threads.runs.create(threadId, runOptions);
 
-    // Setup SSE streaming 
+    // Setup SSE streaming with backpressure handling
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
     res.flushHeaders();
 
     // Send keep-alive pings every 5 seconds
     const pingInterval = setInterval(() => {
-      res.write(': ping\n\n');
+      if (!clientDisconnected && !res.writableEnded) {
+        res.write(': ping\n\n');
+      }
     }, 5000);
 
     let fullAssistantReply = '';
     let clientDisconnected = false;
     let assistantStarted = false;
+    let messageBuffer = [];
+    let isWriting = false;
 
+    // Handle client disconnect
     req.on('close', () => {
       clientDisconnected = true;
+      clearInterval(pingInterval);
     });
 
-    res.write(`data: ${JSON.stringify({ type: 'SESSION', chatSession: chatSession })}\n\n`);
+    // Handle backpressure
+    const writeToStream = async (data) => {
+      if (clientDisconnected || res.writableEnded) return false;
+      
+      return new Promise((resolve) => {
+        const canContinue = res.write(data);
+        if (!canContinue) {
+          // Handle backpressure - wait for drain event
+          res.once('drain', () => resolve(true));
+        } else {
+          resolve(true);
+        }
+      });
+    };
+
+    // Process buffered messages
+    const processBuffer = async () => {
+      if (isWriting || messageBuffer.length === 0) return;
+      
+      isWriting = true;
+      while (messageBuffer.length > 0 && !clientDisconnected) {
+        const message = messageBuffer.shift();
+        await writeToStream(message);
+      }
+      isWriting = false;
+    };
+
+    // Send initial session data
+    await writeToStream(`data: ${JSON.stringify({ type: 'SESSION', chatSession: chatSession })}\n\n`);
 
     for await (const event of run) {
       if (clientDisconnected) break;
@@ -340,7 +470,12 @@ exports.sendMessage = async (req, res) => {
             clearInterval(pingInterval);
           }
           fullAssistantReply += delta;
-          res.write(`data: ${JSON.stringify({ type: 'SUCCESS', message: delta })}\n\n`);
+          
+          // Buffer the message
+          messageBuffer.push(`data: ${JSON.stringify({ type: 'SUCCESS', message: delta })}\n\n`);
+          
+          // Process buffer without blocking
+          setImmediate(processBuffer);
         }
       }
 
@@ -353,9 +488,10 @@ exports.sendMessage = async (req, res) => {
           status: 'complete',
         }]);
 
-        // Token counting and usage update
-        const inputTokens = encoding.encode(content).length;
-        const outputTokens = encoding.encode(fullAssistantReply).length;
+        // Token counting and usage update (using optimized encoder)
+        const modelName = 'gpt-4o'; // or get from assistant config
+        const inputTokens = countTokens(content, modelName);
+        const outputTokens = countTokens(fullAssistantReply, modelName);
 
         // Update subscription usage
         const { data: profile, error: profileError } = await supabase
@@ -383,8 +519,11 @@ exports.sendMessage = async (req, res) => {
             .eq('id', user_id);
         }
 
-        res.write(`data: ${JSON.stringify({ type: 'END' })}\n\n`);
+        // Ensure all buffered messages are sent before ending
+        await processBuffer();
+        await writeToStream(`data: ${JSON.stringify({ type: 'END' })}\n\n`);
         res.end();
+        clearInterval(pingInterval);
         return;
       }
     }
@@ -406,11 +545,14 @@ exports.sendMessage = async (req, res) => {
       res.end();
     }
   } finally {
-    // Clean up TEMP files (local disk files)
-    tempFilePaths.forEach(path => {
-      if (fs.existsSync(path)) {
-        fs.unlinkSync(path);
+    // Clean up TEMP files (local disk files) - async
+    await Promise.all(tempFilePaths.map(async (path) => {
+      try {
+        await fsPromises.access(path);
+        await fsPromises.unlink(path);
+      } catch (err) {
+        // File might already be deleted or inaccessible
       }
-    });
+    }));
   }
 };

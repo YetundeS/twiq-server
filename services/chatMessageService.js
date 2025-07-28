@@ -1,6 +1,5 @@
 const openai = require("../openai");
-const { encoding_for_model } = require('@dqbd/tiktoken');
-const encoding = encoding_for_model('gpt-4'); // or your actual model
+const { countTokens, getEncodingForModel } = require('../utils/tokenEncoder');
 
 async function generateCustomSessionTitle(content) {
   const prompt = `Summarize this user message in 4 words max for a chat title:\n"${content}"`;
@@ -24,7 +23,7 @@ async function generateCustomSessionTitle(content) {
 }
 
 
-async function checkIfEnoughQuota(user, inputContent = '', estimatedOutputTokens = 1000) {
+async function checkIfEnoughQuota(user, inputContent = '', estimatedOutputTokens = 1000, model = 'gpt-4') {
   const quota = user.subscription_quota;
   const usage = user.subscription_usage || {
     input_tokens_used: 0,
@@ -32,7 +31,7 @@ async function checkIfEnoughQuota(user, inputContent = '', estimatedOutputTokens
     cached_input_tokens_used: 0,
   };
 
-  const inputTokens = encoding.encode(inputContent).length;
+  const inputTokens = countTokens(inputContent, model);
   const outputTokens = estimatedOutputTokens; // You can refine this based on assistant model
 
   const estimated = {

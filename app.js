@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const bodyParser = require('body-parser');
+const compression = require('compression');
 
 const userRoutes = require('./routes/userRoutes.js');
 const suggestPromptsRoutes = require('./routes/suggestPromptsRoutes.js');
@@ -10,6 +11,7 @@ const chatMessagesRoutes = require('./routes/chatMessagesRoutes.js');
 const stripeRoutes = require('./routes/stripeRoutes.js');
 const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes.js');
 const cookieParser = require('cookie-parser');
+const { generalLimiter } = require('./middlewares/rateLimitMiddleware');
 
 const app = express();
 
@@ -21,6 +23,23 @@ app.use('/api/stripe/webhook', stripeWebhookRoutes);
 dotenv.config(); // Load environment variables
 
 const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ["https://twiq.vercel.app", "https://twiq-three.vercel.app", "https://app.twiq.ai"];
+
+// Enable compression for all responses
+app.use(compression({
+  // Enable compression for responses larger than 1KB
+  threshold: 1024,
+  // Use highest compression level for better size reduction
+  level: 9,
+  // Custom filter to compress JSON and text responses
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      // Don't compress responses if this request header is present
+      return false;
+    }
+    // Use compression for text-based responses
+    return compression.filter(req, res);
+  }
+}));
 
 // Middleware
 app.use(cors({
@@ -40,6 +59,8 @@ app.options(/.*/, cors({
   credentials: true,
 }));
 
+// Apply general rate limiting to all API routes
+app.use('/api/', generalLimiter);
 
 // Routes
 app.use('/api/user', userRoutes);

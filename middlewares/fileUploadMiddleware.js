@@ -1,12 +1,16 @@
-import fs from "fs";
+import { promises as fs } from "fs";
 import multer from "multer";
 import path from "path";
 
-// Create uploads directory if it doesn't exist
+// Create uploads directory if it doesn't exist (async)
 const uploadsDir = path.join(process.cwd(), 'temp', 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
+(async () => {
+    try {
+        await fs.access(uploadsDir);
+    } catch {
+        await fs.mkdir(uploadsDir, { recursive: true });
+    }
+})();
 
 const chatFileUpload = multer({
     storage: multer.diskStorage({

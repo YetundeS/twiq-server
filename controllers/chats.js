@@ -3,22 +3,49 @@
 const { supabase } = require("../config/supabaseClient");
 
 exports.listChatSessionsPerModel = async (req, res) => {
-    const { userId, assistantSlug } = req.query;
+    const { userId, assistantSlug, page = 1, limit = 20 } = req.query;
 
     if (!userId || !assistantSlug) {
         return res.status(400).json({ error: "user id and assistant slug are required." });
     }
 
+    // Convert to numbers and validate
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 items per page
+    const offset = (pageNum - 1) * limitNum;
+
     try {
+        // Get total count for pagination metadata
+        const { count: totalCount, error: countError } = await supabase
+            .from('chat_sessions')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('assistant_slug', assistantSlug);
+
+        if (countError) throw countError;
+
+        // Get paginated data
         const { data, error } = await supabase
             .from('chat_sessions')
             .select('*')
             .eq('user_id', userId)
             .eq('assistant_slug', assistantSlug)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limitNum - 1);
 
         if (error) return res.status(400).json({ error });
-        res.json(data);
+        
+        // Return paginated response with metadata
+        res.json({
+            data,
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                total: totalCount,
+                totalPages: Math.ceil(totalCount / limitNum),
+                hasMore: offset + limitNum < totalCount
+            }
+        });
     } catch (error) {
         console.error("Assistant chats extraction error:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -29,22 +56,47 @@ exports.listChatSessionsPerModel = async (req, res) => {
 
 
 exports.listAllChatSessions = async (req, res) => {
-    const { userId } = req.query;
+    const { userId, page = 1, limit = 20 } = req.query;
 
     if (!userId) {
         return res.status(400).json({ error: 'Missing userId' });
     }
 
+    // Convert to numbers and validate
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit))); // Max 100 items per page
+    const offset = (pageNum - 1) * limitNum;
 
     try {
+        // Get total count for pagination metadata
+        const { count: totalCount, error: countError } = await supabase
+            .from('chat_sessions')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', userId);
+
+        if (countError) throw countError;
+
+        // Get paginated data
         const { data, error } = await supabase
             .from('chat_sessions')
             .select('*')
             .eq('user_id', userId)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limitNum - 1);
 
         if (error) return res.status(500).json({ error });
-        res.json(data);
+        
+        // Return paginated response with metadata
+        res.json({
+            data,
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                total: totalCount,
+                totalPages: Math.ceil(totalCount / limitNum),
+                hasMore: offset + limitNum < totalCount
+            }
+        });
     } catch (error) {
         console.error("Sessions chats extraction error:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -54,7 +106,7 @@ exports.listAllChatSessions = async (req, res) => {
 
 exports.getMessagesBySession = async (req, res) => {
   const { sessionId } = req.params;
-  const { assistantSlug } = req.query;
+  const { assistantSlug, page = 1, limit = 50 } = req.query;
   const user_id = req.user?.id;
 
   if (!sessionId || !assistantSlug) {
@@ -64,6 +116,11 @@ exports.getMessagesBySession = async (req, res) => {
   if (!user_id) {
     return res.status(401).json({ error: 'Unauthorized: No user found' });
   }
+
+  // Convert to numbers and validate
+  const pageNum = Math.max(1, parseInt(page));
+  const limitNum = Math.min(200, Math.max(1, parseInt(limit))); // Max 200 messages per page
+  const offset = (pageNum - 1) * limitNum;
 
   try {
     // 🔒 Step 1: Ensure the session belongs to the user and matches assistantSlug
@@ -79,21 +136,34 @@ exports.getMessagesBySession = async (req, res) => {
       return res.status(404).json({ error: 'Chat session not found or does not match assistantSlug' });
     }
 
-    // ✅ Step 2: Fetch messages
+    // Get total count for pagination
+    const { count: totalCount, error: countError } = await supabase
+      .from('chat_messages')
+      .select('*', { count: 'exact', head: true })
+      .eq('session_id', sessionId);
+
+    if (countError) throw countError;
+
+    // ✅ Step 2: Fetch paginated messages
     const { data: messages, error: messageError } = await supabase
       .from('chat_messages')
       .select('*')
       .eq('session_id', sessionId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .range(offset, offset + limitNum - 1);
 
     if (messageError) throw messageError;
 
-    // ✅ Step 3: Fetch all files for this session in one query
+    // Extract message IDs for file lookup
+    const messageIds = messages.map(m => m.id);
+
+    // ✅ Step 3: Fetch files only for the paginated messages
     const { data: sessionFiles, error: filesError } = await supabase
       .from('chat_files')
       .select('message_id, file_name, file_size, file_type, openai_file_id')
       .eq('session_id', sessionId)
-      .eq('user_id', user_id); // Extra security check
+      .eq('user_id', user_id)
+      .in('message_id', messageIds); // Only get files for current page messages
 
     if (filesError) throw filesError;
 
@@ -119,7 +189,16 @@ exports.getMessagesBySession = async (req, res) => {
       linkedFiles: filesByMessageId[message.id] || []
     }));
 
-    return res.status(200).json({ messages: messagesWithFiles });
+    return res.status(200).json({ 
+      messages: messagesWithFiles,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitNum),
+        hasMore: offset + limitNum < totalCount
+      }
+    });
   } catch (err) {
     console.error('Error fetching messages:', err.message);
     return res.status(500).json({ error: 'Failed to fetch messages' });
