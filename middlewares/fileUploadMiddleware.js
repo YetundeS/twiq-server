@@ -27,6 +27,7 @@ const chatFileUpload = multer({
     },
     fileFilter: (req, file, cb) => {
         const allowedTypes = [
+            // Document types
             'application/pdf',
             'text/plain',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -36,7 +37,17 @@ const chatFileUpload = multer({
             'application/msword', // .doc files
             'application/vnd.ms-excel', // .xls files
             'text/markdown',
-            'application/rtf'
+            'application/rtf',
+            'text/html',
+            // Image types
+            'image/jpeg',
+            'image/jpg',
+            'image/png',
+            'image/gif',
+            'image/webp',
+            'image/svg+xml',
+            'image/bmp',
+            'image/tiff'
         ];
         if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);

@@ -162,3 +162,29 @@ exports.fetchOneChatSession = async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+
+
+
+exports.deleteSession = async (req, res) => {
+
+  // Get all OpenAI file IDs for this session
+  // const { data: files } = await supabase
+  //   .from('chat_files')
+  //   .select('openai_file_id')
+  //   .eq('session_id', sessionId);
+
+  // if (openaiFileIds.length > 0) {
+  //     cleanupFiles(openaiFileIds).catch(cleanupError => {
+  //       // log cleanupError
+  //     });
+  //   }
+  
+  // // Delete from OpenAI
+  // for (const file of files) {
+  //   await openai.files.del(file.openai_file_id);
+  // }
+  
+  // Delete session and related data
+  // ... your existing deletion logic
+}

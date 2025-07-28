@@ -52,5 +52,67 @@ async function checkIfEnoughQuota(user, inputContent = '', estimatedOutputTokens
   return { ok: true };
 }
 
+// Helper function to categorize files
+const categorizeFiles = (files) => {
+  const textFiles = [];
+  const imageFiles = [];
+  
+  // Define allowed types from frontend
+  const textMimeTypes = new Set([
+    'application/pdf',
+    'text/plain',
+    'text/markdown',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/html'
+  ]);
+  
+  const imageMimeTypes = new Set([
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/svg+xml',
+    'image/bmp',
+    'image/tiff'
+  ]);
+  
+  files.forEach(file => {
+    // Use 'mimetype' property (from multer/server-side) or 'type' (from browser)
+    const mimeType = (file.mimetype || file.type || '').toLowerCase();
+    
+    if (imageMimeTypes.has(mimeType)) {
+      imageFiles.push(file);
+    } else if (textMimeTypes.has(mimeType)) {
+      textFiles.push(file);
+    } else {
+      // Fallback: check file extension for edge cases
+      const fileName = (file.originalname || file.name || '').toLowerCase();
+      const isTextByExtension = fileName.endsWith('.txt') || 
+                               fileName.endsWith('.pdf') || 
+                               fileName.endsWith('.docx') || 
+                               fileName.endsWith('.md') || 
+                               fileName.endsWith('.html');
+      
+      const isImageByExtension = fileName.endsWith('.jpg') || 
+                                fileName.endsWith('.jpeg') || 
+                                fileName.endsWith('.png') || 
+                                fileName.endsWith('.gif') || 
+                                fileName.endsWith('.webp') || 
+                                fileName.endsWith('.svg') || 
+                                fileName.endsWith('.bmp') || 
+                                fileName.endsWith('.tiff');
+      
+      if (isImageByExtension) {
+        imageFiles.push(file);
+      } else {
+        // Default to text (matches your original logic)
+        textFiles.push(file);
+      }
+    }
+  });
+  
+  return { textFiles, imageFiles };
+};
 
-module.exports = { generateCustomSessionTitle, checkIfEnoughQuota };
+module.exports = { generateCustomSessionTitle, checkIfEnoughQuota, categorizeFiles };
