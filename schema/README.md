@@ -48,7 +48,23 @@ Manages file uploads and attachments for messages.
 - `file_size`: File size in bytes
 - `file_type`: MIME type
 - `openai_file_id`: OpenAI file ID for assistant access
+- `vector_store_id`: Optional link to vector store
 - `created_at`: Timestamp
+
+### 5. `vector_stores`
+Manages OpenAI vector store lifecycle and expiration handling.
+
+- `id`: UUID (primary key)
+- `store_id`: OpenAI vector store ID (unique)
+- `user_id`: Foreign key → `profiles.id`
+- `session_id`: Optional link to chat session
+- `name`: Store name for identification
+- `file_count`: Number of files in store
+- `expires_at`: When store expires
+- `status`: 'active', 'expired', or 'recreating'
+- `expired_at`: When store was marked expired
+- `openai_metadata`: Full OpenAI response data
+- `created_at`, `updated_at`: Timestamps
 
 ## 🔁 Triggers
 
@@ -66,6 +82,7 @@ Manages file uploads and attachments for messages.
    - `04_triggers.sql` (Adds automatic timestamp triggers)
    - `05_indexes.sql` (Performance indexes)
    - `06_chat_files.sql` (File management table)
+   - `07_vector_stores.sql` (Vector store management with expiration handling)
 3. Run each query in sequence.
 
 ---
@@ -80,6 +97,7 @@ Manages file uploads and attachments for messages.
 | `04_triggers.sql`    | Adds automatic timestamp update trigger |
 | `05_indexes.sql`     | Performance indexes for all tables     |
 | `06_chat_files.sql`  | File management and upload tracking    |
+| `07_vector_stores.sql` | Vector store management with expiration handling |
 
 ---
 

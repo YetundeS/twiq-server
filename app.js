@@ -10,8 +10,10 @@ const chatsRoutes = require('./routes/chatsRoutes.js');
 const chatMessagesRoutes = require('./routes/chatMessagesRoutes.js');
 const stripeRoutes = require('./routes/stripeRoutes.js');
 const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes.js');
+const vectorStoreRoutes = require('./routes/vectorStoreRoutes.js');
 const cookieParser = require('cookie-parser');
 const { generalLimiter } = require('./middlewares/rateLimitMiddleware');
+const vectorStoreCleanup = require('./services/vectorStoreCleanup');
 
 const app = express();
 
@@ -79,10 +81,25 @@ app.use('/api/suggest-prompts', suggestPromptsRoutes);
 app.use('/api/chats', chatsRoutes);
 app.use('/api/chat-message', chatMessagesRoutes);
 app.use('/api/stripe/', stripeRoutes);
+app.use('/api/vector-stores', vectorStoreRoutes);
 
 // Health Check Route
 app.get('/', (req, res) => {
     res.status(200).json({ message: 'Welcome to TWIQ API!' });
+});
+
+// Initialize vector store cleanup on app start
+vectorStoreCleanup.start();
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received, stopping vector store cleanup...');
+    vectorStoreCleanup.stop();
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT received, stopping vector store cleanup...');
+    vectorStoreCleanup.stop();
 });
 
 module.exports = app;

@@ -5,6 +5,8 @@ const { generateCustomSessionTitle, checkIfEnoughQuota, categorizeFiles } = requ
 const { countTokens } = require('../utils/tokenEncoder');
 const { hasAccess } = require('../utils/userAccess');
 const { compressImage, isCompressibleImage, getOptimalCompressionSettings } = require('../utils/imageCompressor');
+const vectorStoreService = require('../services/vectorStoreService');
+const VectorStoreErrorHandler = require('../utils/vectorStoreErrorHandler');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 
@@ -57,6 +59,9 @@ exports.sendMessage = async (req, res) => {
   let textFileIds = [];
   let imageFileIds = [];
   let tempFilePaths = [];
+
+  let vectorStoreId = null;
+  let vectorStoreRecord = null;
 
   if (hasFiles) {
     const { textFiles, imageFiles } = categorizeFiles(uploadedFiles);
@@ -208,6 +213,30 @@ exports.sendMessage = async (req, res) => {
           error: `Failed to upload files: ${errorMessages}`
         });
       }
+
+      // Create vector store for text files if any exist
+      if (textFileIds.length > 0) {
+        try {
+          const vectorStoreResponse = await VectorStoreErrorHandler.withVectorStoreRecovery(
+            () => vectorStoreService.createVectorStore(
+              user_id,
+              `Chat Files - ${new Date().toISOString()}`,
+              textFileIds.map(f => f.id)
+            ),
+            user_id
+          );
+          
+          if (vectorStoreResponse.success) {
+            vectorStoreId = vectorStoreResponse.vectorStore.id;
+            vectorStoreRecord = vectorStoreResponse.storeRecord;
+          } else {
+            throw new Error(`Failed to create vector store: ${vectorStoreResponse.error}`);
+          }
+        } catch (vectorError) {
+          console.error('Failed to create vector store:', vectorError);
+          // Fall back to individual file attachments if vector store fails
+        }
+      }
     } catch (err) {
       console.log('Failed to process uploaded files: ', err)
       // Clean up all temp files on general error (async)
@@ -257,14 +286,22 @@ exports.sendMessage = async (req, res) => {
           messages: [{
             role: 'user',
             content: messageContent,
-            // Only attach text files to file_search
-            ...(textFileIds.length > 0 && {
+            // Only use attachments for individual files when NOT using vector store
+            ...(!vectorStoreId && textFileIds.length > 0 && {
               attachments: textFileIds.map(fileInfo => ({
                 file_id: fileInfo.id,
                 tools: [{ type: 'file_search' }],
               }))
             })
           }],
+          // Add vector store to thread if available
+          ...(vectorStoreId && {
+            tool_resources: {
+              file_search: {
+                vector_store_ids: [vectorStoreId]
+              }
+            }
+          })
         };
       } else {
         // No files - create thread with just text message
@@ -333,6 +370,7 @@ exports.sendMessage = async (req, res) => {
           file_size: fileInfo.size,
           file_type: fileInfo.type,
           openai_file_id: fileInfo.id,
+          vector_store_id: vectorStoreId // Link to vector store if text file
         }));
 
         const { error: filesInsertError } = await supabase
@@ -360,8 +398,9 @@ exports.sendMessage = async (req, res) => {
         const messageOptions = {
           role: 'user',
           content: messageContent,
-          // Only attach text files to file_search
-          ...(textFileIds.length > 0 && {
+          // Only use attachments for individual files when NOT using vector store
+          // When using vector store, the files are already accessible via the thread's tool_resources
+          ...(!vectorStoreId && textFileIds.length > 0 && {
             attachments: textFileIds.map(fileInfo => ({
               file_id: fileInfo.id,
               tools: [{ type: 'file_search' }],
@@ -369,7 +408,10 @@ exports.sendMessage = async (req, res) => {
           })
         };
 
-        await openai.beta.threads.messages.create(threadId, messageOptions);
+        await VectorStoreErrorHandler.withVectorStoreRecovery(
+          () => openai.beta.threads.messages.create(threadId, messageOptions),
+          user_id
+        );
       } else {
         // No files - just add text message
         await openai.beta.threads.messages.create(threadId, {
@@ -393,7 +435,11 @@ exports.sendMessage = async (req, res) => {
 
       if (textFileIds.length > 0) {
         const textFileNames = textFileIds.map(f => f.name).join(', ');
-        instructions.push(`Reference the uploaded document${textFileIds.length > 1 ? 's' : ''} (${textFileNames}) when relevant and cite which document the information comes from.`);
+        if (vectorStoreId) {
+          instructions.push(`Use the vector store to search and reference the uploaded document${textFileIds.length > 1 ? 's' : ''} (${textFileNames}) when relevant and cite which document the information comes from.`);
+        } else {
+          instructions.push(`Reference the uploaded document${textFileIds.length > 1 ? 's' : ''} (${textFileNames}) when relevant and cite which document the information comes from.`);
+        }
       }
 
       if (imageFileIds.length > 0) {
@@ -407,7 +453,10 @@ exports.sendMessage = async (req, res) => {
       runOptions.instructions = "No files have been uploaded with this message. Respond normally without expecting any file attachments.";
     }
 
-    const run = await openai.beta.threads.runs.create(threadId, runOptions);
+    const run = await VectorStoreErrorHandler.withVectorStoreRecovery(
+      () => openai.beta.threads.runs.create(threadId, runOptions),
+      user_id
+    );
 
     // Setup SSE streaming with backpressure handling
     res.setHeader('Content-Type', 'text/event-stream');

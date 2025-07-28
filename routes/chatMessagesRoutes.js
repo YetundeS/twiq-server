@@ -5,12 +5,14 @@ const { sendMessage } = require('../controllers/chatMessagesController');
 const { default: chatFileUpload } = require('../middlewares/fileUploadMiddleware');
 const { chatMessageLimiter, fileUploadLimiter, subscriptionQuotaCheck } = require('../middlewares/rateLimitMiddleware');
 const { deduplicationMiddleware } = require('../middlewares/deduplicationMiddleware');
+const VectorStoreMiddleware = require('../middlewares/vectorStoreMiddleware');
 
 // Apply rate limiting: chat message limiter first, then file upload limiter if files present
 router.post('/create', 
   isAuthenticatedUser,
   chatMessageLimiter,
   subscriptionQuotaCheck,
+  VectorStoreMiddleware.addRecoveryContext,
   deduplicationMiddleware({
     ttl: 30000, // 30 seconds
     onDuplicate: (req, existing) => {
