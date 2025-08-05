@@ -1,4 +1,5 @@
 const { supabase } = require("../config/supabaseClient"); // Ensure you import Supabase
+const { checkBetaStatus } = require("../services/betaUserService");
 
 const getUserByAuthId = async (auth_id) => {
     if (!auth_id) {
@@ -14,6 +15,22 @@ const getUserByAuthId = async (auth_id) => {
 
         if (error) {
             return { error: error.message };
+        }
+
+        // Check beta status if user is a beta user
+        if (data.is_beta_user) {
+            const betaStatus = await checkBetaStatus(data.id);
+            
+            // If beta is active, override subscription plan and is_active
+            if (betaStatus.isActive) {
+                data.subscription_plan = data.beta_plan;
+                data.is_active = true;
+                data.beta_days_remaining = betaStatus.daysRemaining;
+            } else {
+                // Beta expired, ensure beta plan is not used
+                data.is_beta_user = false;
+                data.beta_plan = null;
+            }
         }
 
         return data;

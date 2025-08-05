@@ -11,6 +11,7 @@ const chatMessagesRoutes = require('./routes/chatMessagesRoutes.js');
 const stripeRoutes = require('./routes/stripeRoutes.js');
 const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes.js');
 const vectorStoreRoutes = require('./routes/vectorStoreRoutes.js');
+const adminRoutes = require('./routes/adminRoutes.js');
 const cookieParser = require('cookie-parser');
 const { generalLimiter } = require('./middlewares/rateLimitMiddleware');
 const vectorStoreCleanup = require('./services/vectorStoreCleanup');
@@ -82,6 +83,7 @@ app.use('/api/chats', chatsRoutes);
 app.use('/api/chat-message', chatMessagesRoutes);
 app.use('/api/stripe/', stripeRoutes);
 app.use('/api/vector-stores', vectorStoreRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health Check Route
 app.get('/', (req, res) => {

@@ -22,6 +22,17 @@ create table if not exists profiles (
   email_confirmed boolean default false,
   email_verification_token text unique,
   
+  -- Beta User Management
+  is_beta_user boolean default false,
+  beta_plan text, -- 'STARTER', 'PRO', 'ENTERPRISE'
+  beta_start_date timestamp,
+  beta_end_date timestamp,
+  beta_granted_by uuid,
+  beta_converted boolean default false,
+  
+  -- Admin Management
+  is_admin boolean default false,
+  
   -- Account Management
   is_deleted boolean default false,
   deleted_at timestamp,
