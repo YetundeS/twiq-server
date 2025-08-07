@@ -13,6 +13,9 @@ router.post("/beta-users", adminController.grantBetaAccess);
 router.get("/beta-users", adminController.getBetaUsers);
 router.delete("/beta-users/:userId", adminController.revokeBetaAccess);
 
+// User invitation
+router.post("/invite-user", adminController.inviteUser);
+
 // Dashboard statistics
 router.get("/dashboard-stats", adminController.getDashboardStats);
 

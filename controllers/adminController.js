@@ -2,7 +2,8 @@ const {
   grantBetaAccess, 
   getBetaUsers, 
   revokeBetaAccess,
-  handleExpiredBetaUsers 
+  handleExpiredBetaUsers,
+  inviteAndGrantBetaAccess 
 } = require("../services/betaUserService");
 const { supabase } = require("../config/supabaseClient");
 
@@ -159,6 +160,57 @@ exports.getAllUsers = async (req, res) => {
     res.json({ users: data });
   } catch (error) {
     console.error("Error fetching users:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+exports.inviteUser = async (req, res) => {
+  try {
+    const { userName, userEmail, organizationName, betaPlan, startDate, durationDays } = req.body;
+    const grantedByAdminId = req.user.id;
+
+    // Validate inputs
+    if (!userName || !userEmail || !betaPlan || !startDate || !durationDays) {
+      return res.status(400).json({ 
+        error: "Missing required fields: userName, userEmail, betaPlan, startDate, durationDays" 
+      });
+    }
+
+    if (!['STARTER', 'PRO', 'ENTERPRISE'].includes(betaPlan)) {
+      return res.status(400).json({ 
+        error: "Invalid plan. Must be STARTER, PRO, or ENTERPRISE" 
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userEmail)) {
+      return res.status(400).json({ 
+        error: "Invalid email format" 
+      });
+    }
+
+    const result = await inviteAndGrantBetaAccess({
+      userName,
+      userEmail,
+      organizationName: organizationName || '',
+      betaPlan,
+      startDate: new Date(startDate),
+      durationDays: parseInt(durationDays),
+      grantedByAdminId
+    });
+
+    if (result.success) {
+      res.json({ 
+        message: "User invited and beta access granted successfully", 
+        user: result.user,
+        temporaryPassword: result.temporaryPassword
+      });
+    } else {
+      res.status(500).json({ error: result.error });
+    }
+  } catch (error) {
+    console.error("Error inviting user:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
