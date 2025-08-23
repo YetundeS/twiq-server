@@ -7,6 +7,7 @@ const { hasAccess } = require('../utils/userAccess');
 const { compressImage, isCompressibleImage, getOptimalCompressionSettings } = require('../utils/imageCompressor');
 const vectorStoreService = require('../services/vectorStoreService');
 const VectorStoreErrorHandler = require('../utils/vectorStoreErrorHandler');
+const { checkAndResetQuota } = require('../services/quotaResetService');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 
@@ -24,7 +25,7 @@ exports.sendMessage = async (req, res) => {
     ({ session_id, content, assistantSlug } = req.body);
   }
 
-  const user = req.user;
+  let user = req.user;
   const user_id = user.id;
   const uploadedFiles = req.files || [];
 
@@ -32,6 +33,9 @@ exports.sendMessage = async (req, res) => {
     return res.status(403).json({ error: 'Subscription inactive' });
   }
 
+  // Check and reset quota if needed before checking availability
+  user = await checkAndResetQuota(user);
+  
   const check = await checkIfEnoughQuota(user);
   if (check?.error) {
     return res.status(403).json({ error: check?.error || 'Quota Exceeded' });

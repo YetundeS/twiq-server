@@ -9,8 +9,11 @@ const { supabase } = require("../config/supabaseClient");
 
 exports.grantBetaAccess = async (req, res) => {
   try {
-    const { userEmail, betaPlan, startDate, durationDays } = req.body;
+    let { userEmail, betaPlan, startDate, durationDays } = req.body;
     const grantedByAdminId = req.user.id;
+
+    // Trim email
+    userEmail = userEmail?.trim();
 
     // Validate inputs
     if (!userEmail || !betaPlan || !startDate || !durationDays) {
@@ -22,6 +25,14 @@ exports.grantBetaAccess = async (req, res) => {
     if (!['STARTER', 'PRO', 'ENTERPRISE'].includes(betaPlan)) {
       return res.status(400).json({ 
         error: "Invalid plan. Must be STARTER, PRO, or ENTERPRISE" 
+      });
+    }
+
+    // Validate email format - requires at least one dot and TLD
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(userEmail)) {
+      return res.status(400).json({ 
+        error: "Invalid email format. Please provide a valid email address (e.g., user@example.com)." 
       });
     }
 
@@ -166,8 +177,13 @@ exports.getAllUsers = async (req, res) => {
 
 exports.inviteUser = async (req, res) => {
   try {
-    const { userName, userEmail, organizationName, betaPlan, startDate, durationDays } = req.body;
+    let { userName, userEmail, organizationName, betaPlan, startDate, durationDays } = req.body;
     const grantedByAdminId = req.user.id;
+
+    // Trim input values
+    userName = userName?.trim();
+    userEmail = userEmail?.trim();
+    organizationName = organizationName?.trim();
 
     // Validate inputs
     if (!userName || !userEmail || !betaPlan || !startDate || !durationDays) {
@@ -182,11 +198,12 @@ exports.inviteUser = async (req, res) => {
       });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Validate email format - requires at least one dot and TLD
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(userEmail)) {
+      console.log(`Email validation failed for: ${userEmail}`);
       return res.status(400).json({ 
-        error: "Invalid email format" 
+        error: "Invalid email format. Please provide a valid email address (e.g., user@example.com)." 
       });
     }
 

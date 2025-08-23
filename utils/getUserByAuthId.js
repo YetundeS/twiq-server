@@ -1,5 +1,6 @@
 const { supabase } = require("../config/supabaseClient"); // Ensure you import Supabase
 const { checkBetaStatus } = require("../services/betaUserService");
+const { checkAndResetQuota } = require("../services/quotaResetService");
 
 const getUserByAuthId = async (auth_id) => {
     if (!auth_id) {
@@ -17,23 +18,28 @@ const getUserByAuthId = async (auth_id) => {
             return { error: error.message };
         }
 
+        let userData = data;
+
         // Check beta status if user is a beta user
-        if (data.is_beta_user) {
-            const betaStatus = await checkBetaStatus(data.id);
+        if (userData.is_beta_user) {
+            const betaStatus = await checkBetaStatus(userData.id);
             
             // If beta is active, override subscription plan and is_active
             if (betaStatus.isActive) {
-                data.subscription_plan = data.beta_plan;
-                data.is_active = true;
-                data.beta_days_remaining = betaStatus.daysRemaining;
+                userData.subscription_plan = userData.beta_plan;
+                userData.is_active = true;
+                userData.beta_days_remaining = betaStatus.daysRemaining;
             } else {
                 // Beta expired, ensure beta plan is not used
-                data.is_beta_user = false;
-                data.beta_plan = null;
+                userData.is_beta_user = false;
+                userData.beta_plan = null;
             }
         }
 
-        return data;
+        // Check and reset quota if needed (for both beta and regular users)
+        userData = await checkAndResetQuota(userData);
+
+        return userData;
     } catch (err) {
         console.error("Error fetching user:", err);
         return { error: "Internal server error." };

@@ -157,6 +157,13 @@ exports.login = async (req, res) => {
         });
     }
 
+    // Check admin status from database only
+    // The is_admin field from the database is the single source of truth
+    const isAdmin = user.is_admin === true;
+
+    // Include admin status in user object for frontend
+    user.is_admin = isAdmin;
+
     // ✅ Return both tokens
     const { access_token, refresh_token } = data.session;
 

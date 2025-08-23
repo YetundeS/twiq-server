@@ -232,27 +232,23 @@ async function inviteAndGrantBetaAccess({
   durationDays,
   grantedByAdminId
 }) {
+  let authUserId = null; // Track for cleanup if needed
+  
   try {
     console.log(`🚀 Starting user invitation process for: ${userEmail}`);
-    // console.log(`📋 Details: Name=${userName}, Plan=${betaPlan}, Duration=${durationDays} days`);
     
     // Generate temporary password
     const temporaryPassword = Math.random().toString(36).slice(-12);
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + durationDays);
     
-    // console.log(`🔑 Generated temporary password: ${temporaryPassword}`);
-    // console.log(`📅 Trial period: ${startDate} to ${endDate}`);
-    
     const quota = PLAN_QUOTAS[betaPlan];
     if (!quota) {
       console.log(`❌ Invalid beta plan: ${betaPlan}`);
       throw new Error(`Invalid beta plan: ${betaPlan}`);
     }
-    // console.log(`📊 Plan quota: ${JSON.stringify(quota)}`);
 
     // Check if user already exists
-    // console.log(`🔍 Checking if user exists: ${userEmail}`);
     const { data: existingUser, error: checkError } = await supabase
       .from('profiles')
       .select('id, email')
@@ -272,10 +268,12 @@ async function inviteAndGrantBetaAccess({
       };
     }
 
-    // console.log(`✅ User doesn't exist, proceeding with creation`);
-
-    // Create auth user with temporary password
-    // console.log(`👤 Creating auth user with Supabase Admin API...`);
+    // Start transaction-like operation
+    // Note: Supabase doesn't have built-in transactions for cross-service operations,
+    // so we'll use careful error handling and cleanup
+    
+    // Step 1: Create auth user with temporary password
+    console.log(`👤 Creating auth user...`);
     const { data: signupData, error: signupError } = await supabaseAdmin.auth.admin.createUser({
       email: userEmail,
       password: temporaryPassword,
@@ -292,16 +290,15 @@ async function inviteAndGrantBetaAccess({
       throw new Error("Failed to create user account");
     }
 
-    // console.log(`✅ Auth user created successfully: ${signupData.user.id}`);
+    authUserId = signupData.user.id; // Store for potential cleanup
 
-    // Generate avatar and verification token
+    // Step 2: Generate avatar and verification token
     console.log(`🎭 Generating avatar for: ${userName}`);
     const { avatar_url } = getRandomAvatar(userName);
     const token = uuidv4();
-    // console.log(`🎭 Avatar URL: ${avatar_url}, Token: ${token}`);
 
-    // Create user profile with beta access
-    // console.log(`🗃️ Creating user profile in database...`);
+    // Step 3: Create user profile with beta access
+    console.log(`🗃️ Creating user profile in database...`);
     const profilePayload = {
       auth_id: signupData.user.id,
       user_name: userName,
@@ -321,8 +318,8 @@ async function inviteAndGrantBetaAccess({
       subscription_quota: quota,
       quota_last_reset: new Date()
     };
-    // console.log(`🗃️ Profile payload:`, JSON.stringify(profilePayload, null, 2));
     
+    // Use database transaction for profile creation
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .insert(profilePayload)
@@ -331,13 +328,46 @@ async function inviteAndGrantBetaAccess({
 
     if (profileError) {
       console.log(`❌ Failed to create user profile:`, profileError);
+      
       // Cleanup: delete auth user if profile creation fails
-      console.log(`🧹 Cleaning up auth user: ${signupData.user.id}`);
-      await supabaseAdmin.auth.admin.deleteUser(signupData.user.id);
+      if (authUserId) {
+        console.log(`🧹 Rolling back: Deleting auth user ${authUserId}`);
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(authUserId);
+          console.log(`✅ Auth user deleted successfully`);
+        } catch (cleanupError) {
+          console.error(`⚠️ Warning: Failed to delete auth user during cleanup:`, cleanupError);
+          // Log this for manual cleanup if needed
+        }
+      }
+      
       throw new Error(`Failed to create user profile: ${profileError.message}`);
     }
 
-    // console.log(`✅ User profile created successfully: ${profileData.id}`);
+    // Verify both records exist before proceeding
+    const { data: verifyProfile, error: verifyError } = await supabase
+      .from('profiles')
+      .select('id, auth_id, email')
+      .eq('auth_id', authUserId)
+      .single();
+
+    if (verifyError || !verifyProfile) {
+      console.log(`❌ Profile verification failed after creation`);
+      
+      // Cleanup both if verification fails
+      if (authUserId) {
+        console.log(`🧹 Rolling back: Deleting auth user ${authUserId}`);
+        try {
+          await supabaseAdmin.auth.admin.deleteUser(authUserId);
+        } catch (cleanupError) {
+          console.error(`⚠️ Warning: Failed to delete auth user during cleanup:`, cleanupError);
+        }
+      }
+      
+      throw new Error('Failed to verify user creation');
+    }
+
+    console.log(`✅ User profile created and verified successfully: ${profileData.id}`);
 
     // Send invitation email
     const loginUrl = "https://app.twiq.ai/auth";

@@ -18,13 +18,9 @@ const adminMiddleware = async (req, res, next) => {
       return res.status(403).json({ error: "Access denied: User not found" });
     }
 
-    // Check if user is admin
+    // Check if user is admin - database is the single source of truth
     if (!user.is_admin) {
-      // Also check against environment variable admin emails
-      const adminEmails = process.env.ADMIN_EMAILS?.split(',') || [];
-      if (!adminEmails.includes(user.email)) {
-        return res.status(403).json({ error: "Access denied: Admin privileges required" });
-      }
+      return res.status(403).json({ error: "Access denied: Admin privileges required" });
     }
 
     // Add admin info to request
