@@ -29,4 +29,9 @@ router.get("/users", adminController.getAllUsers);
 // Process expired beta users (can be called manually or by cron)
 router.post("/process-expired-beta", adminController.processExpiredBetaUsers);
 
+// System logs management
+router.get("/logs", adminController.getSystemLogs);
+router.get("/logs/stats", adminController.getLogStats);
+router.delete("/logs/cleanup", adminController.cleanupOldLogs);
+
 module.exports = router;

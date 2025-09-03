@@ -142,12 +142,27 @@ exports.login = async (req, res) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
+        logger.logAuthEvent('Login failed - Supabase auth error', { 
+            email, 
+            error: error.message,
+            ip: req.ip 
+        });
         return res.status(400).json({ error: error.message });
     }
 
     let user = await getUserByAuthId(data?.user?.id);
 
     if (user?.error || !user) {
+        logger.logSystemError('Login failed - Error fetching user profile', 
+            new Error(user?.error || 'User profile not found'), 
+            { 
+                email, 
+                authUserId: data?.user?.id,
+                ip: req.ip,
+                userAgent: req.get('User-Agent'),
+                endpoint: '/api/user/login'
+            }
+        );
         return res.status(400).json({ error: 'Error fetching user.' });
     }
 
@@ -167,6 +182,16 @@ exports.login = async (req, res) => {
 
     // ✅ Return both tokens
     const { access_token, refresh_token } = data.session;
+
+    // Log successful login
+    logger.logAuthEvent('Login successful', {
+        email,
+        userId: user.id,
+        userName: user.user_name,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        isAdmin: user.is_admin
+    });
 
     return res.status(200).json({
         message: 'Login successful.',

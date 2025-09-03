@@ -232,3 +232,202 @@ exports.inviteUser = async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 };
+
+// System Logs Management
+exports.getSystemLogs = async (req, res) => {
+  try {
+    const {
+      level = 'all',
+      source = 'all',
+      page = 1,
+      limit = 50,
+      search = '',
+      startDate,
+      endDate
+    } = req.query;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build query
+    let query = supabase
+      .from('system_logs')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false });
+
+    // Apply filters
+    if (level !== 'all') {
+      query = query.eq('level', level);
+    }
+
+    if (source !== 'all') {
+      query = query.eq('source', source);
+    }
+
+    if (search) {
+      query = query.ilike('message', `%${search}%`);
+    }
+
+    if (startDate) {
+      query = query.gte('created_at', new Date(startDate).toISOString());
+    }
+
+    if (endDate) {
+      query = query.lte('created_at', new Date(endDate).toISOString());
+    }
+
+    // Apply pagination
+    query = query.range(offset, offset + parseInt(limit) - 1);
+
+    const { data: logs, error, count } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    // Log admin access to logs
+    logger.logAdminAction('Admin viewed system logs', req.user.id, {
+      filters: { level, source, search, startDate, endDate },
+      page: parseInt(page),
+      limit: parseInt(limit),
+      resultCount: logs?.length || 0
+    });
+
+    res.json({
+      logs: logs || [],
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count || 0,
+        pages: Math.ceil((count || 0) / parseInt(limit))
+      }
+    });
+
+  } catch (error) {
+    logger.logSystemError('Failed to fetch system logs', error, { 
+      adminUserId: req.user.id,
+      filters: req.query 
+    });
+    res.status(500).json({ error: 'Failed to fetch system logs' });
+  }
+};
+
+exports.getLogStats = async (req, res) => {
+  try {
+    const now = new Date();
+    const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const last30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // Get error counts for different time periods
+    const [errors24h, errors7d, errors30d, topSources, levelDistribution] = await Promise.all([
+      // Errors in last 24 hours
+      supabase
+        .from('system_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('level', 'error')
+        .gte('created_at', last24h.toISOString()),
+
+      // Errors in last 7 days
+      supabase
+        .from('system_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('level', 'error')
+        .gte('created_at', last7d.toISOString()),
+
+      // Errors in last 30 days
+      supabase
+        .from('system_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('level', 'error')
+        .gte('created_at', last30d.toISOString()),
+
+      // Top sources (last 7 days)
+      supabase
+        .from('system_logs')
+        .select('source')
+        .gte('created_at', last7d.toISOString())
+        .not('source', 'is', null),
+
+      // Level distribution (last 7 days)
+      supabase
+        .from('system_logs')
+        .select('level')
+        .gte('created_at', last7d.toISOString())
+    ]);
+
+    // Process top sources
+    const sourceCount = {};
+    topSources.data?.forEach(log => {
+      sourceCount[log.source] = (sourceCount[log.source] || 0) + 1;
+    });
+
+    const topSourcesArray = Object.entries(sourceCount)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([source, count]) => ({ source, count }));
+
+    // Process level distribution
+    const levelCount = {};
+    levelDistribution.data?.forEach(log => {
+      levelCount[log.level] = (levelCount[log.level] || 0) + 1;
+    });
+
+    const stats = {
+      errors: {
+        last24h: errors24h.count || 0,
+        last7d: errors7d.count || 0,
+        last30d: errors30d.count || 0
+      },
+      topSources: topSourcesArray,
+      levelDistribution: [
+        { level: 'error', count: levelCount.error || 0 },
+        { level: 'warn', count: levelCount.warn || 0 },
+        { level: 'info', count: levelCount.info || 0 },
+        { level: 'debug', count: levelCount.debug || 0 }
+      ],
+      generatedAt: now.toISOString()
+    };
+
+    // Log admin access to stats
+    logger.logAdminAction('Admin viewed log statistics', req.user.id, {
+      statsGenerated: stats
+    });
+
+    res.json(stats);
+
+  } catch (error) {
+    logger.logSystemError('Failed to fetch log statistics', error, { 
+      adminUserId: req.user.id 
+    });
+    res.status(500).json({ error: 'Failed to fetch log statistics' });
+  }
+};
+
+exports.cleanupOldLogs = async (req, res) => {
+  try {
+    // Call the database cleanup function
+    const { data, error } = await supabase
+      .rpc('cleanup_old_system_logs');
+
+    if (error) {
+      throw error;
+    }
+
+    const deletedCount = data || 0;
+
+    logger.logAdminAction('Admin triggered manual log cleanup', req.user.id, {
+      deletedCount
+    });
+
+    res.json({
+      message: 'Log cleanup completed successfully',
+      deletedCount
+    });
+
+  } catch (error) {
+    logger.logSystemError('Failed to cleanup old logs', error, { 
+      adminUserId: req.user.id 
+    });
+    res.status(500).json({ error: 'Failed to cleanup logs' });
+  }
+};

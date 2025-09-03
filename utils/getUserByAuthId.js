@@ -1,6 +1,6 @@
 const { supabase } = require("../config/supabaseClient"); // Ensure you import Supabase
 const { checkBetaStatus } = require("../services/betaUserService");
-const { checkAndResetQuota } = require("../services/quotaResetService");
+const { getQuotaInfo } = require("../services/quotaResetService");
 const logger = require('../utils/logger');
 
 const getUserByAuthId = async (auth_id) => {
@@ -42,8 +42,8 @@ const getUserByAuthId = async (auth_id) => {
             }
         }
 
-        // Check and reset quota if needed (for both beta and regular users)
-        userData = await checkAndResetQuota(userData);
+        // Get current quota info without performing reset check (for both beta and regular users)
+        userData = getQuotaInfo(userData);
 
         return userData;
     } catch (err) {

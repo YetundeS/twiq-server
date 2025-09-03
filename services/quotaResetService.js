@@ -2,6 +2,10 @@ const { supabase } = require("../config/supabaseClient");
 const { PLAN_QUOTAS } = require("../constants");
 const logger = require('../utils/logger');
 
+// In-memory cache for quota checks with 5-minute TTL
+const quotaCheckCache = new Map();
+const QUOTA_CHECK_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
 /**
  * Check if quota should be reset based on last reset time and plan
  * @param {Date} lastReset - Last reset timestamp
@@ -70,7 +74,32 @@ async function resetUserQuota(userId, plan) {
 }
 
 /**
- * Check and reset quota if needed
+ * Check if quota check is needed based on cache TTL
+ * @param {string} userId - User ID
+ * @returns {boolean} - Whether quota check is needed
+ */
+function needsQuotaCheck(userId) {
+  const cachedCheck = quotaCheckCache.get(userId);
+  if (!cachedCheck) return true;
+  
+  const now = Date.now();
+  return (now - cachedCheck.timestamp) > QUOTA_CHECK_TTL;
+}
+
+/**
+ * Update quota check cache
+ * @param {string} userId - User ID
+ * @param {Object} user - User object
+ */
+function updateQuotaCache(userId, user) {
+  quotaCheckCache.set(userId, {
+    timestamp: Date.now(),
+    user: { ...user }
+  });
+}
+
+/**
+ * Check and reset quota if needed (with caching)
  * @param {Object} user - User object with quota information
  * @returns {Object} - Updated user object or original if no reset needed
  */
@@ -81,10 +110,17 @@ async function checkAndResetQuota(user) {
       return user;
     }
     
+    // Check if we need to perform quota check (5-minute throttling)
+    if (!needsQuotaCheck(user.id)) {
+      const cachedData = quotaCheckCache.get(user.id);
+      return cachedData.user;
+    }
+    
     // Determine the plan to use (beta plan takes precedence)
     const activePlan = user.is_beta_user ? user.beta_plan : user.subscription_plan;
     
     if (!activePlan) {
+      updateQuotaCache(user.id, user);
       return user;
     }
     
@@ -94,20 +130,33 @@ async function checkAndResetQuota(user) {
       
       if (result.success && result.data) {
         // Update user object with reset quota
-        return {
+        const updatedUser = {
           ...user,
           subscription_quota: result.data.subscription_quota,
           subscription_usage: result.data.subscription_usage,
           quota_last_reset: result.data.quota_last_reset
         };
+        updateQuotaCache(user.id, updatedUser);
+        return updatedUser;
       }
     }
     
+    updateQuotaCache(user.id, user);
     return user;
   } catch (error) {
-    logger.logSystemError('Error in checkAndResetQuota', error, { userId: user.id, activePlan });
+    logger.logSystemError('Error in checkAndResetQuota', error, { userId: user.id });
     return user; // Return original user on error
   }
+}
+
+/**
+ * Get quota info without performing reset check (lightweight)
+ * @param {Object} user - User object
+ * @returns {Object} - User with current quota info
+ */
+function getQuotaInfo(user) {
+  // Just return user data without quota reset logic
+  return user;
 }
 
 /**
@@ -130,5 +179,6 @@ module.exports = {
   shouldResetQuota,
   resetUserQuota,
   checkAndResetQuota,
+  getQuotaInfo,
   getRemainingQuota
 };
