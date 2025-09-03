@@ -16,17 +16,17 @@ function getAssistantId(slug) {
 const PLAN_QUOTAS = {
   STARTER: {
     input_tokens: 498000,
-    cached_input_tokens: 199000,
+    cached_tokens: 199000,
     output_tokens: 99000,
   },
   PRO: {
     input_tokens: 998000,
-    cached_input_tokens: 399000,
+    cached_tokens: 399000,
     output_tokens: 199000,
   },
   ENTERPRISE: {
     input_tokens: 3749000,
-    cached_input_tokens: 1499000,
+    cached_tokens: 1499000,
     output_tokens: 749000,
   },
 };
@@ -53,6 +53,24 @@ const ASSISTANT_MODEL_NAMES = {
   video_scripts: "Video Scripts",
 };
 
+// Plan hierarchy for upgrade/downgrade detection
+const PLAN_HIERARCHY = {
+  STARTER: 1,
+  PRO: 2,
+  ENTERPRISE: 3,
+};
+
+// Helper function to determine if plan change is upgrade or downgrade
+function isUpgrade(fromPlan, toPlan) {
+  if (!fromPlan || !toPlan) return false;
+  return PLAN_HIERARCHY[toPlan] > PLAN_HIERARCHY[fromPlan];
+}
+
+function isDowngrade(fromPlan, toPlan) {
+  if (!fromPlan || !toPlan) return false;
+  return PLAN_HIERARCHY[toPlan] < PLAN_HIERARCHY[fromPlan];
+}
+
 
 
 module.exports = {
@@ -60,7 +78,10 @@ module.exports = {
   getAssistantId,
   PLAN_QUOTAS,
   PLAN_ID_MAP,
-  ASSISTANT_MODEL_NAMES
+  ASSISTANT_MODEL_NAMES,
+  PLAN_HIERARCHY,
+  isUpgrade,
+  isDowngrade
 };
 
 

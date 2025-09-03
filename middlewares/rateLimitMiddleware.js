@@ -117,6 +117,25 @@ const secureEndpointLimiter = createDualLimiter(
   }
 );
 
+// Webhook rate limiter (strict for security)
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 50, // Allow up to 50 webhook calls per minute (Stripe can send multiple events)
+  message: 'Too many webhook requests. Please check your Stripe configuration.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use IPv6-safe IP for webhooks (no user context)
+    return ipKeyGenerator(req);
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Webhook rate limit exceeded',
+      retryAfter: req.rateLimit.resetTime
+    });
+  }
+});
+
 // Per-user API quota tracker (for subscription-based limits)
 const subscriptionQuotaCheck = async (req, res, next) => {
   try {
@@ -168,6 +187,7 @@ module.exports = {
   chatMessageLimiter,
   fileUploadLimiter,
   authLimiter,
+  webhookLimiter,
   createCustomLimiter,
   createDualLimiter,
   secureEndpointLimiter,
