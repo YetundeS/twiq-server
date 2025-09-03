@@ -1,5 +1,6 @@
 const vectorStoreService = require('../services/vectorStoreService');
 const VectorStoreErrorHandler = require('../utils/vectorStoreErrorHandler');
+const logger = require('../utils/logger');
 
 /**
  * Middleware to validate and manage vector stores for requests
@@ -29,7 +30,7 @@ class VectorStoreMiddleware {
       const isValid = await vectorStoreService.validateVectorStore(vectorStoreId);
       
       if (!isValid) {
-        console.log(`⚠️ Vector store ${vectorStoreId} is expired, attempting recreation...`);
+        logger.logInfo('Vector store is expired, attempting recreation', { vectorStoreId, userId });
         
         // Attempt to recreate the expired vector store
         const recoveryResult = await VectorStoreErrorHandler.handleExpiredVectorStore(
@@ -49,7 +50,7 @@ class VectorStoreMiddleware {
           req.originalVectorStoreId = vectorStoreId;
           req.newVectorStoreId = recoveryResult.newVectorStore.id;
           
-          console.log(`✅ Vector store recreated: ${vectorStoreId} -> ${recoveryResult.newVectorStore.id}`);
+          logger.logInfo('Vector store recreated', { originalId: vectorStoreId, newId: recoveryResult.newVectorStore.id, userId });
         } else {
           return res.status(400).json({
             error: 'Vector store expired and could not be recreated',
@@ -61,7 +62,7 @@ class VectorStoreMiddleware {
       next();
 
     } catch (error) {
-      console.error('❌ Vector store validation failed:', error);
+      logger.logSystemError('Vector store validation failed', error, { route: req.route?.path, method: req.method, userId: req.user?.id, vectorStoreId: req.body?.vectorStoreId || req.params?.vectorStoreId || req.query?.vectorStoreId });
       
       // Log error for monitoring
       VectorStoreErrorHandler.logVectorStoreError(error, {
@@ -117,12 +118,12 @@ class VectorStoreMiddleware {
       req.vectorStoreRecord = result.storeRecord;
       req.isNewVectorStore = result.isNew;
 
-      console.log(`${result.isNew ? '🆕' : '♻️'} Vector store for session ${sessionId}: ${result.vectorStore.id}`);
+      logger.logInfo('Vector store for session', { sessionId, vectorStoreId: result.vectorStore.id, isNew: result.isNew, userId });
 
       next();
 
     } catch (error) {
-      console.error('❌ Failed to ensure session vector store:', error);
+      logger.logSystemError('Failed to ensure session vector store', error, { route: req.route?.path, method: req.method, userId: req.user?.id, sessionId: req.body?.session_id || req.params?.sessionId });
       
       VectorStoreErrorHandler.logVectorStoreError(error, {
         route: req.route?.path,
@@ -179,16 +180,16 @@ class VectorStoreMiddleware {
    */
   static async performCleanup() {
     try {
-      console.log('🧹 Starting vector store cleanup...');
+      logger.logInfo('Starting vector store cleanup');
       
       const cleanedCount = await vectorStoreService.cleanupExpiredStores();
       
-      console.log(`✅ Vector store cleanup completed: ${cleanedCount} stores marked as expired`);
+      logger.logInfo('Vector store cleanup completed', { cleanedCount });
       
       return { success: true, cleanedCount };
 
     } catch (error) {
-      console.error('❌ Vector store cleanup failed:', error);
+      logger.logSystemError('Vector store cleanup failed', error);
       return { success: false, error: error.message };
     }
   }
@@ -199,13 +200,13 @@ class VectorStoreMiddleware {
    */
   static async proactiveRecreation() {
     try {
-      console.log('🔄 Starting proactive vector store recreation...');
+      logger.logInfo('Starting proactive vector store recreation');
       
       const expiringStores = await vectorStoreService.getExpiringVectorStores();
       let recreatedCount = 0;
       
       for (const store of expiringStores) {
-        console.log(`🔄 Proactively recreating expiring store: ${store.store_id}`);
+        logger.logInfo('Proactively recreating expiring store', { storeId: store.store_id, userId: store.user_id });
         
         const result = await vectorStoreService.recreateExpiredVectorStore(
           store.store_id, 
@@ -214,18 +215,18 @@ class VectorStoreMiddleware {
         
         if (result.success) {
           recreatedCount++;
-          console.log(`✅ Proactively recreated: ${store.store_id} -> ${result.vectorStore.id}`);
+          logger.logInfo('Proactively recreated store', { originalId: store.store_id, newId: result.vectorStore.id, userId: store.user_id });
         } else {
-          console.error(`❌ Failed to proactively recreate ${store.store_id}:`, result.error);
+          logger.logSystemError('Failed to proactively recreate store', new Error(result.error), { storeId: store.store_id, userId: store.user_id });
         }
       }
       
-      console.log(`✅ Proactive recreation completed: ${recreatedCount}/${expiringStores.length} stores recreated`);
+      logger.logInfo('Proactive recreation completed', { recreatedCount, totalExpiring: expiringStores.length });
       
       return { success: true, recreatedCount, totalExpiring: expiringStores.length };
 
     } catch (error) {
-      console.error('❌ Proactive recreation failed:', error);
+      logger.logSystemError('Proactive recreation failed', error);
       return { success: false, error: error.message };
     }
   }

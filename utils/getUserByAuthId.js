@@ -1,6 +1,7 @@
 const { supabase } = require("../config/supabaseClient"); // Ensure you import Supabase
 const { checkBetaStatus } = require("../services/betaUserService");
 const { checkAndResetQuota } = require("../services/quotaResetService");
+const logger = require('../utils/logger');
 
 const getUserByAuthId = async (auth_id) => {
     if (!auth_id) {
@@ -10,7 +11,12 @@ const getUserByAuthId = async (auth_id) => {
     try {
         const { data, error } = await supabase
             .from("profiles")
-            .select("*") // Select all fields or specify the needed ones (e.g., "id, email, name")
+            .select(`
+              id, user_name, email, avatar_url, organization_name, 
+              subscription_plan, subscription_quota, subscription_usage, 
+              is_active, is_admin, stripe_customer_id, email_confirmed,
+              created_at, cached_tokens, is_beta_user, beta_plan
+            `)
             .eq("auth_id", auth_id) // Assuming `id` is the `auth_id` in the profiles table
             .single(); // Fetch a single user
 
@@ -41,7 +47,7 @@ const getUserByAuthId = async (auth_id) => {
 
         return userData;
     } catch (err) {
-        console.error("Error fetching user:", err);
+        logger.logSystemError('Error fetching user by auth ID', err, { auth_id });
         return { error: "Internal server error." };
     }
 };

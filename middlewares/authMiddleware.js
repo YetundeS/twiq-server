@@ -1,6 +1,7 @@
 const { supabase } = require('../config/supabaseClient');
 const { getUserByAuthId } = require('../utils/getUserByAuthId');
 const { verifySupabaseToken, extractToken } = require('../utils/jwtVerify');
+const logger = require('../utils/logger');
 
 // Cache for user data with TTL (5 minutes)
 const userCache = new Map();
@@ -89,7 +90,11 @@ exports.isAuthenticatedUser = async (req, res, next) => {
     req.user = userData;
     next();
   } catch (err) {
-    console.error("Auth middleware error:", err);
+    logger.logSystemError('Auth middleware error', err, {
+      authHeader: authHeader ? 'present' : 'missing',
+      userAgent: req.get('User-Agent'),
+      ip: req.ip
+    });
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

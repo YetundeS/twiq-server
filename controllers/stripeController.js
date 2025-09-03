@@ -1,6 +1,7 @@
 const stripe = require("../config/stripeClient");
 const { supabase } = require("../config/supabaseClient");
 const { saveSubscription, markSubscriptionInactive, updateSubscriptionPlan, resetQuotaOnBillingCycle } = require("../services/stripeService");
+const logger = require('../utils/logger');
 
 
 exports.createCheckoutSession = async (req, res) => {
@@ -33,7 +34,7 @@ exports.createCheckoutSession = async (req, res) => {
 
         res.json({ url: session.url });
     } catch (err) {
-        console.error("Checkout session creation error:", err);
+        logger.logSystemError('Stripe checkout session creation failed', err, { userId, priceId });
         return res.status(500).json({ error: "Internal server error." });
     }
 };
@@ -47,10 +48,9 @@ exports.trackSubscription = async (request, response) => {
     // Validate webhook signature
     try {
         event = stripe.webhooks.constructEvent(request.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
-        console.log(`✅ Webhook signature verified for event: ${event.type}`);
+        logger.logStripeEvent('Webhook signature verified', { eventType: event.type, eventId: event.id });
     } catch (err) {
-        console.error('❌ Webhook signature verification failed:', {
-            error: err.message,
+        logger.logSystemError('Webhook signature verification failed', err, {
             signature: sig ? 'present' : 'missing',
             bodyLength: request.body ? request.body.length : 0
         });
@@ -61,7 +61,7 @@ exports.trackSubscription = async (request, response) => {
         switch (event.type) {
             case 'checkout.session.completed': {
                 const session = event.data.object;
-                console.log(`🔔 Processing checkout.session.completed: ${session.id}, mode: ${session.mode}`);
+                logger.logStripeEvent('Processing checkout session completed', { sessionId: session.id, mode: session.mode });
 
                 // 🔍 CREDIT PURCHASE FLOW
                 if (session.mode === 'payment' && session.metadata?.input_tokens) {
@@ -75,7 +75,7 @@ exports.trackSubscription = async (request, response) => {
                             throw new Error('Missing user_id in session metadata for credit purchase');
                         }
 
-                        console.log(`💳 Processing credit purchase for user ${userId}: ${inputToAdd} input, ${outputToAdd} output, ${cachedToAdd} cached tokens`);
+                        logger.logStripeEvent('Processing credit purchase', { userId, inputToAdd, outputToAdd, cachedToAdd });
 
                         const { data: user, error } = await supabase
                             .from('profiles')
@@ -108,10 +108,10 @@ exports.trackSubscription = async (request, response) => {
 
                         if (updateError) throw new Error(`Failed to update quota: ${updateError.message}`);
 
-                        console.log(`✅ Credited tokens to user ${userId}: ${JSON.stringify(updatedQuota)}`);
+                        logger.logStripeEvent('Credit purchase successful', { userId, updatedQuota });
                         break;
                     } catch (creditError) {
-                        console.error('❌ Error processing credit purchase:', creditError.message);
+                        logger.logSystemError('Credit purchase processing failed', creditError, { userId, sessionId: session.id });
                         // Continue processing - don't fail the entire webhook
                         break;
                     }
@@ -129,7 +129,7 @@ exports.trackSubscription = async (request, response) => {
                         throw new Error('Missing subscription ID in completed session');
                     }
 
-                    console.log(`📊 Processing subscription for user ${userId}, subscription: ${session.subscription}`);
+                    logger.logStripeEvent('Processing subscription', { userId, subscriptionId: session.subscription });
 
                     const subscription = await stripe.subscriptions.retrieve(session.subscription);
                     const productId = subscription.items.data[0]?.price?.product;
@@ -145,9 +145,9 @@ exports.trackSubscription = async (request, response) => {
                         productId,
                     });
 
-                    console.log(`✅ Saved subscription for user ${userId}, customer: ${session.customer}, product: ${productId}`);
+                    logger.logStripeEvent('Subscription saved successfully', { userId, customerId: session.customer, productId });
                 } catch (subscriptionError) {
-                    console.error('❌ Error processing subscription:', subscriptionError.message);
+                    logger.logSystemError('Subscription processing failed', subscriptionError, { userId, sessionId: session.id });
                     // Continue processing - don't fail the entire webhook
                 }
 
@@ -157,16 +157,16 @@ exports.trackSubscription = async (request, response) => {
             case 'invoice.payment_failed': {
                 try {
                     const invoice = event.data.object;
-                    console.log(`💸 Processing payment failure for customer: ${invoice.customer}`);
+                    logger.logStripeEvent('Processing payment failure', { customerId: invoice.customer, subscriptionId: invoice.subscription });
                     
                     if (!invoice.customer) {
                         throw new Error('Missing customer ID in payment failure event');
                     }
 
                     await markSubscriptionInactive(invoice.customer);
-                    console.log(`✅ Marked subscription inactive for customer: ${invoice.customer}`);
+                    logger.logStripeEvent('Subscription marked inactive', { customerId: invoice.customer });
                 } catch (error) {
-                    console.error('❌ Error processing payment failure:', error.message);
+                    logger.logSystemError('Payment failure processing failed', error, { customerId: invoice.customer });
                 }
                 break;
             }
@@ -174,16 +174,16 @@ exports.trackSubscription = async (request, response) => {
             case 'invoice.payment_succeeded': {
                 try {
                     const invoice = event.data.object;
-                    console.log(`💰 Processing payment success for customer: ${invoice.customer}, subscription: ${invoice.subscription}`);
+                    logger.logStripeEvent('Processing payment success', { customerId: invoice.customer, subscriptionId: invoice.subscription });
                     
                     if (!invoice.customer || !invoice.subscription) {
                         throw new Error('Missing customer ID or subscription ID in payment success event');
                     }
 
                     await resetQuotaOnBillingCycle(invoice.customer, invoice.subscription);
-                    console.log(`✅ Reset quota for customer: ${invoice.customer}`);
+                    logger.logStripeEvent('Quota reset successful', { customerId: invoice.customer });
                 } catch (error) {
-                    console.error('❌ Error processing payment success:', error.message);
+                    logger.logSystemError('Payment success processing failed', error, { customerId: invoice.customer });
                 }
                 break;
             }
@@ -191,16 +191,16 @@ exports.trackSubscription = async (request, response) => {
             case 'customer.subscription.deleted': {
                 try {
                     const subscription = event.data.object;
-                    console.log(`🗑️ Processing subscription deletion for customer: ${subscription.customer}`);
+                    logger.logStripeEvent('Processing subscription deletion', { customerId: subscription.customer, subscriptionId: subscription.id });
                     
                     if (!subscription.customer) {
                         throw new Error('Missing customer ID in subscription deletion event');
                     }
 
                     await markSubscriptionInactive(subscription.customer);
-                    console.log(`✅ Marked subscription inactive after deletion for customer: ${subscription.customer}`);
+                    logger.logStripeEvent('Subscription deletion completed', { customerId: subscription.customer });
                 } catch (error) {
-                    console.error('❌ Error processing subscription deletion:', error.message);
+                    logger.logSystemError('Subscription deletion failed', error, { customerId: subscription.customer });
                 }
                 break;
             }
@@ -210,32 +210,29 @@ exports.trackSubscription = async (request, response) => {
                     const subscription = event.data.object;
                     const productId = subscription.items.data[0]?.price?.product;
                     
-                    console.log(`🔄 Processing subscription update for customer: ${subscription.customer}, new product: ${productId}`);
+                    logger.logStripeEvent('Processing subscription update', { customerId: subscription.customer, newProductId: productId });
                     
                     if (!subscription.customer || !productId) {
                         throw new Error('Missing customer ID or product ID in subscription update event');
                     }
 
                     await updateSubscriptionPlan(subscription.customer, productId);
-                    console.log(`✅ Updated subscription plan for customer: ${subscription.customer} to product: ${productId}`);
+                    logger.logStripeEvent('Subscription update completed', { customerId: subscription.customer, productId });
                 } catch (error) {
-                    console.error('❌ Error processing subscription update:', error.message);
+                    logger.logSystemError('Subscription update failed', error, { customerId: subscription.customer });
                 }
                 break;
             }
 
             default:
-                console.log(`⚠️ Unhandled event type: ${event.type} - Event ID: ${event.id}`);
+                logger.logStripeEvent('Unhandled webhook event type', { eventType: event.type, eventId: event.id });
         }
 
         response.json({ received: true });
     } catch (err) {
-        console.error('❌ Critical webhook handler error:', {
-            error: err.message,
-            stack: err.stack,
+        logger.logSystemError('Critical webhook handler error', err, {
             eventType: event?.type,
-            eventId: event?.id,
-            timestamp: new Date().toISOString()
+            eventId: event?.id
         });
         response.status(500).json({ 
             error: 'Webhook processing failed',
@@ -263,7 +260,7 @@ exports.createBillingPortalSession = async (req, res) => {
 
         res.json({ url: portalSession.url });
     } catch (err) {
-        console.error('Failed to create billing portal session:', err);
+        logger.logSystemError('Billing portal session creation failed', err, { stripeCustomerId });
         res.status(500).json({ error: 'Internal server error' });
     }
 };
@@ -308,7 +305,7 @@ exports.buyTWIQCredit = async (req, res) => {
 
         return res.status(200).json({ url: session.url });
     } catch (error) {
-        console.error('Stripe Checkout Error:', error);
+        logger.logSystemError('Stripe checkout error', error, { userId, priceId });;
         return res.status(500).json({ error: 'Failed to create checkout session' });
     }
 };

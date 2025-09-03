@@ -1,4 +1,5 @@
 const { supabase } = require("../config/supabaseClient");
+const logger = require('../utils/logger');
 
 const adminMiddleware = async (req, res, next) => {
   try {
@@ -29,7 +30,7 @@ const adminMiddleware = async (req, res, next) => {
     
     next();
   } catch (error) {
-    console.error("Admin middleware error:", error);
+    logger.logSystemError('Admin middleware error', error, { userId: req.user?.id, userAgent: req.get('User-Agent') });
     return res.status(500).json({ error: "Internal server error" });
   }
 };

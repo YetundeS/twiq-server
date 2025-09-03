@@ -6,6 +6,7 @@ const {
   inviteAndGrantBetaAccess 
 } = require("../services/betaUserService");
 const { supabase } = require("../config/supabaseClient");
+const logger = require('../utils/logger');
 
 exports.grantBetaAccess = async (req, res) => {
   try {
@@ -64,7 +65,7 @@ exports.grantBetaAccess = async (req, res) => {
       res.status(500).json({ error: result.error });
     }
   } catch (error) {
-    console.error("Error granting beta access:", error);
+    logger.logSystemError('Error granting beta access', error, { userEmail, betaPlan, grantedByAdminId });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -78,7 +79,7 @@ exports.getBetaUsers = async (req, res) => {
 
     res.json({ betaUsers });
   } catch (error) {
-    console.error("Error fetching beta users:", error);
+    logger.logSystemError('Error fetching beta users', error, { includeExpired });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -99,7 +100,7 @@ exports.revokeBetaAccess = async (req, res) => {
       res.status(500).json({ error: result.error });
     }
   } catch (error) {
-    console.error("Error revoking beta access:", error);
+    logger.logSystemError('Error revoking beta access', error, { userId });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -133,7 +134,7 @@ exports.getDashboardStats = async (req, res) => {
       planDistribution
     });
   } catch (error) {
-    console.error("Error fetching dashboard stats:", error);
+    logger.logSystemError('Error fetching dashboard stats', error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -146,7 +147,7 @@ exports.processExpiredBetaUsers = async (req, res) => {
       ...result 
     });
   } catch (error) {
-    console.error("Error processing expired beta users:", error);
+    logger.logSystemError('Error processing expired beta users', error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -170,7 +171,7 @@ exports.getAllUsers = async (req, res) => {
 
     res.json({ users: data });
   } catch (error) {
-    console.error("Error fetching users:", error);
+    logger.logSystemError('Error fetching users', error, { search });
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -201,7 +202,7 @@ exports.inviteUser = async (req, res) => {
     // Validate email format - requires at least one dot and TLD
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
     if (!emailRegex.test(userEmail)) {
-      console.log(`Email validation failed for: ${userEmail}`);
+      logger.logInfo('Email validation failed during user invitation', { userEmail });
       return res.status(400).json({ 
         error: "Invalid email format. Please provide a valid email address (e.g., user@example.com)." 
       });
@@ -227,7 +228,7 @@ exports.inviteUser = async (req, res) => {
       res.status(500).json({ error: result.error });
     }
   } catch (error) {
-    console.error("Error inviting user:", error);
+    logger.logSystemError('Error inviting user', error, { userName, userEmail, betaPlan });
     res.status(500).json({ error: "Internal server error" });
   }
 };

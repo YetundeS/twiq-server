@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const logger = require('../utils/logger');
 
 // Import the IPv6-safe key generator helper
 const { ipKeyGenerator } = require('express-rate-limit');
@@ -65,6 +66,44 @@ const authLimiter = rateLimit({
   keyGenerator: (req) => {
     // Use IPv6-safe IP for auth endpoints (security-focused)
     return ipKeyGenerator(req);
+  }
+});
+
+// Email verification rate limiter
+const emailVerificationLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 3, // Limit to 3 email verification attempts per 5 minutes
+  message: 'Too many email verification attempts. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    return req.user?.id || ipKeyGenerator(req);
+  }
+});
+
+// Password reset rate limiter
+const passwordResetLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 3, // Limit to 3 password reset requests per 10 minutes per email
+  message: 'Too many password reset requests. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use email hash as key to prevent enumeration
+    const email = req.body?.email || '';
+    return email ? `password_reset_${email}` : ipKeyGenerator(req);
+  }
+});
+
+// Admin endpoints rate limiter (stricter)
+const adminLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // Limit admin users to 50 requests per 15 minutes
+  message: 'Too many admin requests. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    return req.user?.id || ipKeyGenerator(req);
   }
 });
 
@@ -177,7 +216,10 @@ const subscriptionQuotaCheck = async (req, res, next) => {
     next();
   } catch (error) {
     // Don't block request on quota check errors
-    console.error('Quota check error:', error);
+    logger.logSystemError('Quota check error', error, {
+      userId: req.user?.id,
+      endpoint: req.path
+    });
     next();
   }
 };
@@ -187,6 +229,9 @@ module.exports = {
   chatMessageLimiter,
   fileUploadLimiter,
   authLimiter,
+  emailVerificationLimiter,
+  passwordResetLimiter,
+  adminLimiter,
   webhookLimiter,
   createCustomLimiter,
   createDualLimiter,

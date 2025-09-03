@@ -1,5 +1,6 @@
 const VectorStoreMiddleware = require('../middlewares/vectorStoreMiddleware');
 const vectorStoreService = require('./vectorStoreService');
+const logger = require('../utils/logger');
 
 class VectorStoreCleanupService {
   constructor() {
@@ -13,28 +14,26 @@ class VectorStoreCleanupService {
    */
   start() {
     if (this.isRunning) {
-      console.log('⚠️ Vector store cleanup service is already running');
+      logger.logInfo('Vector store cleanup service is already running');
       return;
     }
 
-    console.log('🚀 Starting vector store cleanup service...');
+    logger.logInfo('Starting vector store cleanup service');
 
     // Schedule cleanup every 6 hours (6 * 60 * 60 * 1000 ms)
     this.cleanupInterval = setInterval(async () => {
-      console.log('🧹 Running scheduled vector store cleanup...');
+      logger.logInfo('Running scheduled vector store cleanup');
       await this.performScheduledCleanup();
     }, 6 * 60 * 60 * 1000);
 
     // Schedule proactive recreation every 12 hours (12 * 60 * 60 * 1000 ms)
     this.proactiveRecreationInterval = setInterval(async () => {
-      console.log('🔄 Running scheduled proactive vector store recreation...');
+      logger.logInfo('Running scheduled proactive vector store recreation');
       await this.performProactiveRecreation();
     }, 12 * 60 * 60 * 1000);
 
     this.isRunning = true;
-    console.log('✅ Vector store cleanup service started');
-    console.log('   📅 Cleanup runs every 6 hours');
-    console.log('   🔄 Proactive recreation runs every 12 hours');
+    logger.logInfo('Vector store cleanup service started', { cleanupInterval: '6 hours', proactiveRecreationInterval: '12 hours' });
   }
 
   /**
@@ -42,11 +41,11 @@ class VectorStoreCleanupService {
    */
   stop() {
     if (!this.isRunning) {
-      console.log('⚠️ Vector store cleanup service is not running');
+      logger.logInfo('Vector store cleanup service is not running');
       return;
     }
 
-    console.log('🛑 Stopping vector store cleanup service...');
+    logger.logInfo('Stopping vector store cleanup service');
 
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
@@ -59,7 +58,7 @@ class VectorStoreCleanupService {
     }
 
     this.isRunning = false;
-    console.log('✅ Vector store cleanup service stopped');
+    logger.logInfo('Vector store cleanup service stopped');
   }
 
   /**
@@ -68,15 +67,14 @@ class VectorStoreCleanupService {
   async performScheduledCleanup() {
     try {
       const startTime = Date.now();
-      console.log('🧹 Starting scheduled vector store cleanup...');
+      logger.logInfo('Starting scheduled vector store cleanup');
 
       const result = await VectorStoreMiddleware.performCleanup();
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
       
       if (result.success) {
-        console.log(`✅ Scheduled cleanup completed in ${duration}s`);
-        console.log(`   📊 Expired stores marked: ${result.cleanedCount}`);
+        logger.logInfo('Scheduled cleanup completed', { duration: parseFloat(duration), cleanedCount: result.cleanedCount });
         
         // Log cleanup metrics
         this.logCleanupMetrics({
@@ -87,7 +85,7 @@ class VectorStoreCleanupService {
           timestamp: new Date().toISOString()
         });
       } else {
-        console.error(`❌ Scheduled cleanup failed in ${duration}s:`, result.error);
+        logger.logSystemError('Scheduled cleanup failed', new Error(result.error), { duration: parseFloat(duration) });
         
         this.logCleanupMetrics({
           type: 'cleanup',
@@ -99,7 +97,7 @@ class VectorStoreCleanupService {
       }
 
     } catch (error) {
-      console.error('❌ Scheduled cleanup encountered an error:', error);
+      logger.logSystemError('Scheduled cleanup encountered an error', error);
       
       this.logCleanupMetrics({
         type: 'cleanup',
@@ -116,15 +114,14 @@ class VectorStoreCleanupService {
   async performProactiveRecreation() {
     try {
       const startTime = Date.now();
-      console.log('🔄 Starting proactive vector store recreation...');
+      logger.logInfo('Starting proactive vector store recreation');
 
       const result = await VectorStoreMiddleware.proactiveRecreation();
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
       
       if (result.success) {
-        console.log(`✅ Proactive recreation completed in ${duration}s`);
-        console.log(`   📊 Stores recreated: ${result.recreatedCount}/${result.totalExpiring}`);
+        logger.logInfo('Proactive recreation completed', { duration: parseFloat(duration), recreatedCount: result.recreatedCount, totalExpiring: result.totalExpiring });
         
         // Log recreation metrics
         this.logCleanupMetrics({
@@ -136,7 +133,7 @@ class VectorStoreCleanupService {
           timestamp: new Date().toISOString()
         });
       } else {
-        console.error(`❌ Proactive recreation failed in ${duration}s:`, result.error);
+        logger.logSystemError('Proactive recreation failed', new Error(result.error), { duration: parseFloat(duration) });
         
         this.logCleanupMetrics({
           type: 'proactive_recreation',
@@ -148,7 +145,7 @@ class VectorStoreCleanupService {
       }
 
     } catch (error) {
-      console.error('❌ Proactive recreation encountered an error:', error);
+      logger.logSystemError('Proactive recreation encountered an error', error);
       
       this.logCleanupMetrics({
         type: 'proactive_recreation',
@@ -163,7 +160,7 @@ class VectorStoreCleanupService {
    * Run cleanup immediately (useful for testing or manual triggers)
    */
   async runCleanupNow() {
-    console.log('🧹 Running immediate vector store cleanup...');
+    logger.logInfo('Running immediate vector store cleanup');
     await this.performScheduledCleanup();
   }
 
@@ -171,7 +168,7 @@ class VectorStoreCleanupService {
    * Run proactive recreation immediately
    */
   async runProactiveRecreationNow() {
-    console.log('🔄 Running immediate proactive recreation...');
+    logger.logInfo('Running immediate proactive recreation');
     await this.performProactiveRecreation();
   }
 
@@ -193,7 +190,7 @@ class VectorStoreCleanupService {
    * @param {Object} metrics - Metrics data
    */
   logCleanupMetrics(metrics) {
-    console.log('📊 Vector Store Cleanup Metrics:', JSON.stringify(metrics, null, 2));
+    logger.logInfo('Vector Store Cleanup Metrics', metrics);
     
     // Here you could integrate with monitoring services:
     // - Send to database for historical tracking
@@ -241,7 +238,7 @@ class VectorStoreCleanupService {
       };
 
     } catch (error) {
-      console.error('❌ Failed to get cleanup stats:', error);
+      logger.logSystemError('Failed to get cleanup stats', error);
       return {
         error: error.message,
         serviceStatus: this.getStatus()
@@ -256,7 +253,7 @@ const cleanupService = new VectorStoreCleanupService();
 // Auto-start in production
 if (process.env.NODE_ENV === 'production') {
   cleanupService.start();
-  console.log('🚀 Vector store cleanup service auto-started in production mode');
+  logger.logInfo('Vector store cleanup service started in production mode');
 }
 
 module.exports = cleanupService;

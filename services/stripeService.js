@@ -1,6 +1,7 @@
 const stripe = require("../config/stripeClient");
 const { supabase } = require("../config/supabaseClient");
 const { PLAN_QUOTAS, PLAN_ID_MAP, isUpgrade, isDowngrade } = require("../constants");
+const logger = require('../utils/logger');
 
 async function saveSubscription({ userId, stripeCustomerId, stripeSubscriptionId, productId }) {
   try {
@@ -8,7 +9,7 @@ async function saveSubscription({ userId, stripeCustomerId, stripeSubscriptionId
     const quota = PLAN_QUOTAS[plan]
 
     if (!quota) {
-      console.error(`Invalid plan "${plan}" passed to saveSubscription`);
+      logger.logSystemError('Invalid plan passed to saveSubscription', new Error(`Invalid plan: ${plan}`), { plan, userId, stripeCustomerId, productId });
       return;
     }
 
@@ -25,16 +26,16 @@ async function saveSubscription({ userId, stripeCustomerId, stripeSubscriptionId
       .eq('id', userId);
 
     if (error) {
-      console.error('Error updating user subscription:', error.message);
+      logger.logSystemError('Error updating user subscription in saveSubscription', error, { userId, stripeCustomerId, stripeSubscriptionId, productId, plan });
     }
   } catch (err) {
-    console.error('Unexpected error in saveSubscription:', err);
+    logger.logSystemError('Unexpected error in saveSubscription', err, { userId, stripeCustomerId, stripeSubscriptionId, productId });
   }
 }
 
 async function markSubscriptionInactive(stripeCustomerId) {
   if (!stripeCustomerId) {
-    console.error("No Stripe customer ID provided to markSubscriptionInactive");
+    logger.logSystemError('No Stripe customer ID provided to markSubscriptionInactive', new Error('Missing stripeCustomerId'), {});
     return;
   }
 
@@ -51,18 +52,18 @@ async function markSubscriptionInactive(stripeCustomerId) {
       .eq('stripe_customer_id', stripeCustomerId);
 
     if (error) {
-      console.error('Failed to mark subscription inactive:', error.message);
+      logger.logSystemError('Failed to mark subscription inactive', error, { stripeCustomerId });
     } else {
-      console.log(`Successfully marked subscription as inactive for customer: ${stripeCustomerId}`);
+      logger.logInfo(`Successfully marked subscription as inactive for customer: ${stripeCustomerId}`, { stripeCustomerId });
     }
   } catch (err) {
-    console.error('Unexpected error in markSubscriptionInactive:', err.message);
+    logger.logSystemError('Unexpected error in markSubscriptionInactive', err, { stripeCustomerId });
   }
 }
 
 async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
   if (!stripeCustomerId || !newProductId) {
-    console.error("Missing parameters in updateSubscriptionPlan");
+    logger.logSystemError('Missing parameters in updateSubscriptionPlan', new Error('Missing parameters'), { stripeCustomerId, newProductId });
     return;
   }
 
@@ -71,7 +72,7 @@ async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
     const newQuota = PLAN_QUOTAS[newPlan];
 
     if (!newPlan || !newQuota) {
-      console.error(`Invalid product ID "${newProductId}" or plan not found in mapping.`);
+      logger.logSystemError('Invalid product ID or plan not found in mapping', new Error(`Invalid product ID: ${newProductId}`), { newProductId, stripeCustomerId });
       return;
     }
 
@@ -83,7 +84,7 @@ async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
       .single();
 
     if (fetchError) {
-      console.error('Error fetching current user data:', fetchError.message);
+      logger.logSystemError('Error fetching current user data in updateSubscriptionPlan', fetchError, { stripeCustomerId, newProductId });
       return;
     }
 
@@ -95,7 +96,7 @@ async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
 
     if (isUpgradeFlow) {
       // UPGRADE: Apply immediately - user gets better service right away
-      console.log(`⬆️ UPGRADE detected: ${currentPlan} → ${newPlan}. Applying immediately.`);
+      logger.logInfo(`Upgrade detected: ${currentPlan} → ${newPlan}`, { currentPlan, newPlan, stripeCustomerId, action: 'upgrade' });
       
       const { error } = await supabase
         .from('profiles')
@@ -110,14 +111,14 @@ async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
         .eq('stripe_customer_id', stripeCustomerId);
 
       if (error) {
-        console.error("Error applying upgrade:", error.message);
+        logger.logSystemError('Error applying upgrade', error, { currentPlan, newPlan, stripeCustomerId });
       } else {
-        console.log(`✅ UPGRADE applied: ${currentPlan} → ${newPlan} for customer ${stripeCustomerId}`);
+        logger.logInfo(`Upgrade applied: ${currentPlan} → ${newPlan} for customer ${stripeCustomerId}`, { currentPlan, newPlan, stripeCustomerId });
       }
       
     } else if (isDowngradeFlow) {
       // DOWNGRADE: Schedule for next billing cycle - user keeps current quota until then
-      console.log(`⬇️ DOWNGRADE detected: ${currentPlan} → ${newPlan}. Scheduling for next billing cycle.`);
+      logger.logInfo(`Downgrade detected: ${currentPlan} → ${newPlan}`, { currentPlan, newPlan, stripeCustomerId, action: 'downgrade' });
       
       // Get next billing date from Stripe subscription
       const subscription = await stripe.subscriptions.retrieve(currentUser.stripe_subscription_id);
@@ -133,14 +134,14 @@ async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
         .eq('stripe_customer_id', stripeCustomerId);
 
       if (error) {
-        console.error("Error scheduling downgrade:", error.message);
+        logger.logSystemError('Error scheduling downgrade', error, { currentPlan, newPlan, stripeCustomerId, nextBillingDate });
       } else {
-        console.log(`✅ DOWNGRADE scheduled: ${currentPlan} → ${newPlan} effective ${nextBillingDate.toISOString()} for customer ${stripeCustomerId}`);
+        logger.logInfo(`Downgrade scheduled: ${currentPlan} → ${newPlan} effective ${nextBillingDate.toISOString()}`, { currentPlan, newPlan, stripeCustomerId, nextBillingDate });
       }
       
     } else {
       // Same plan level (maybe different billing frequency) - just update
-      console.log(`↔️ LATERAL change: ${currentPlan} → ${newPlan}. Applying immediately.`);
+      logger.logInfo(`Lateral change: ${currentPlan} → ${newPlan}`, { currentPlan, newPlan, stripeCustomerId, action: 'lateral' });
       
       const { error } = await supabase
         .from('profiles')
@@ -154,13 +155,13 @@ async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
         .eq('stripe_customer_id', stripeCustomerId);
 
       if (error) {
-        console.error("Error applying lateral change:", error.message);
+        logger.logSystemError('Error applying lateral change', error, { currentPlan, newPlan, stripeCustomerId });
       } else {
-        console.log(`✅ LATERAL change applied: ${currentPlan} → ${newPlan} for customer ${stripeCustomerId}`);
+        logger.logInfo(`Lateral change applied: ${currentPlan} → ${newPlan} for customer ${stripeCustomerId}`, { currentPlan, newPlan, stripeCustomerId });
       }
     }
   } catch (err) {
-    console.error("Unexpected error in updateSubscriptionPlan:", err.message);
+    logger.logSystemError('Unexpected error in updateSubscriptionPlan', err, { stripeCustomerId, newProductId });
   }
 }
 
@@ -168,7 +169,7 @@ async function updateSubscriptionPlan(stripeCustomerId, newProductId) {
 
 async function resetQuotaOnBillingCycle(stripeCustomerId, subscriptionId) {
   if (!stripeCustomerId || !subscriptionId) {
-    console.error('Missing stripeCustomerId or subscriptionId in resetQuotaOnBillingCycle');
+    logger.logSystemError('Missing stripeCustomerId or subscriptionId in resetQuotaOnBillingCycle', new Error('Missing parameters'), { stripeCustomerId, subscriptionId });
     return;
   }
 
@@ -181,7 +182,7 @@ async function resetQuotaOnBillingCycle(stripeCustomerId, subscriptionId) {
       .single();
 
     if (fetchError) {
-      console.error('Error fetching user for billing cycle reset:', fetchError.message);
+      logger.logSystemError('Error fetching user for billing cycle reset', fetchError, { stripeCustomerId, subscriptionId });
       return;
     }
 
@@ -197,9 +198,9 @@ async function resetQuotaOnBillingCycle(stripeCustomerId, subscriptionId) {
       if (effectiveDate <= now) {
         planToUse = currentUser.pending_plan_change;
         shouldApplyPendingChange = true;
-        console.log(`🔄 APPLYING pending plan change: ${currentUser.subscription_plan} → ${planToUse} (effective date passed)`);
+        logger.logInfo(`Applying pending plan change: ${currentUser.subscription_plan} → ${planToUse}`, { currentPlan: currentUser.subscription_plan, newPlan: planToUse, stripeCustomerId, reason: 'effective date passed' });
       } else {
-        console.log(`⏳ Pending plan change exists but not yet effective: ${currentUser.subscription_plan} → ${currentUser.pending_plan_change} (effective: ${effectiveDate.toISOString()})`);
+        logger.logInfo(`Pending plan change not yet effective: ${currentUser.subscription_plan} → ${currentUser.pending_plan_change}`, { currentPlan: currentUser.subscription_plan, pendingPlan: currentUser.pending_plan_change, effectiveDate: effectiveDate.toISOString(), stripeCustomerId });
       }
     }
 
@@ -207,11 +208,11 @@ async function resetQuotaOnBillingCycle(stripeCustomerId, subscriptionId) {
     const quota = PLAN_QUOTAS[planToUse];
 
     if (!planToUse || !quota) {
-      console.error(`Invalid plan "${planToUse}" for quota reset. Available plans: ${Object.keys(PLAN_QUOTAS).join(', ')}`);
+      logger.logSystemError('Invalid plan for quota reset in billing cycle', new Error(`Invalid plan: ${planToUse}`), { planToUse, availablePlans: Object.keys(PLAN_QUOTAS), stripeCustomerId });
       return;
     }
 
-    console.log(`🔄 Resetting quota for plan "${planToUse}" with quota:`, quota);
+    logger.logInfo(`Resetting quota for plan: ${planToUse}`, { planToUse, quota, stripeCustomerId });
 
     // Prepare update object
     const updateData = {
@@ -225,7 +226,7 @@ async function resetQuotaOnBillingCycle(stripeCustomerId, subscriptionId) {
       updateData.subscription_plan = planToUse;
       updateData.pending_plan_change = null;
       updateData.plan_change_effective_date = null;
-      console.log(`✅ Applying pending plan change during billing cycle reset`);
+      logger.logInfo('Applying pending plan change during billing cycle reset', { planToUse, stripeCustomerId });
     }
 
     // Apply the update
@@ -235,13 +236,13 @@ async function resetQuotaOnBillingCycle(stripeCustomerId, subscriptionId) {
       .eq('stripe_customer_id', stripeCustomerId);
 
     if (error) {
-      console.error('Failed to reset quota on billing cycle renewal:', error.message);
+      logger.logSystemError('Failed to reset quota on billing cycle renewal', error, { planToUse, stripeCustomerId, shouldApplyPendingChange });
     } else {
       const action = shouldApplyPendingChange ? 'Quota reset AND pending plan change applied' : 'Quota reset';
-      console.log(`✅ ${action} for customer ${stripeCustomerId} - Plan: ${planToUse}`);
+      logger.logInfo(`${action} for customer ${stripeCustomerId}`, { planToUse, stripeCustomerId, action, shouldApplyPendingChange });
     }
   } catch (err) {
-    console.error('Unexpected error in resetQuotaOnBillingCycle:', err.message);
+    logger.logSystemError('Unexpected error in resetQuotaOnBillingCycle', err, { stripeCustomerId, subscriptionId });
   }
 }
 

@@ -1,4 +1,5 @@
 const { OpenAI } = require("openai");
+const logger = require('../utils/logger');
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -69,7 +70,7 @@ exports.suggestPrompts = async (req, res) => {
 
     res.status(200).json({ suggestions });
   } catch (err) {
-    console.error("OpenAI error:", err);
+    logger.logSystemError('OpenAI error in prompt suggestions', err, { input, model, modelDescription });
     res.status(500).json({ error: "Failed to generate suggestions" });
   }
 };

@@ -1,5 +1,6 @@
 const { supabase } = require("../config/supabaseClient");
 const { PLAN_QUOTAS } = require("../constants");
+const logger = require('../utils/logger');
 
 /**
  * Check if quota should be reset based on last reset time and plan
@@ -36,7 +37,7 @@ async function resetUserQuota(userId, plan) {
   try {
     const quota = PLAN_QUOTAS[plan];
     if (!quota) {
-      console.error(`Invalid plan for quota reset: ${plan}`);
+      logger.logSystemError('Invalid plan for quota reset', new Error(`Invalid plan: ${plan}`), { plan, userId });
       return { error: `Invalid plan: ${plan}` };
     }
     
@@ -56,14 +57,14 @@ async function resetUserQuota(userId, plan) {
       .single();
     
     if (error) {
-      console.error('Error resetting user quota:', error);
+      logger.logSystemError('Error resetting user quota', error, { userId, plan });
       return { error: error.message };
     }
     
-    console.log(`Quota reset for user ${userId} with plan ${plan}`);
+    logger.logInfo(`Quota reset for user ${userId} with plan ${plan}`, { userId, plan, quota });
     return { success: true, data };
   } catch (err) {
-    console.error('Unexpected error in resetUserQuota:', err);
+    logger.logSystemError('Unexpected error in resetUserQuota', err, { userId, plan });
     return { error: err.message };
   }
 }
@@ -104,7 +105,7 @@ async function checkAndResetQuota(user) {
     
     return user;
   } catch (error) {
-    console.error('Error in checkAndResetQuota:', error);
+    logger.logSystemError('Error in checkAndResetQuota', error, { userId: user.id, activePlan });
     return user; // Return original user on error
   }
 }

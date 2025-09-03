@@ -3,10 +3,14 @@ const router = express.Router();
 const adminController = require("../controllers/adminController");
 const { isAuthenticatedUser } = require("../middlewares/authMiddleware");
 const adminMiddleware = require("../middlewares/adminMiddleware");
+const { adminLimiter } = require('../middlewares/rateLimitMiddleware');
+const { strictSanitization } = require('../middlewares/inputSanitizationMiddleware');
 
-// All admin routes require authentication and admin privileges
+// All admin routes require authentication, admin privileges, rate limiting and input sanitization
+router.use(adminLimiter);
 router.use(isAuthenticatedUser);
 router.use(adminMiddleware);
+router.use(strictSanitization);
 
 // Beta user management
 router.post("/beta-users", adminController.grantBetaAccess);

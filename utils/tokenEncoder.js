@@ -1,4 +1,5 @@
 const { encoding_for_model } = require('@dqbd/tiktoken');
+const logger = require('./logger');
 
 // Cache for encoding instances
 const encodingCache = new Map();
@@ -20,7 +21,7 @@ const getEncodingForModel = (model) => {
     encodingCache.set(model, encoding);
     return encoding;
   } catch (error) {
-    console.error(`Failed to create encoding for model ${model}:`, error);
+    logger.logSystemError('Failed to create encoding for model', error, { model, fallbackModel: 'gpt-4' });
     // Fallback to a default model encoding
     const defaultModel = 'gpt-4';
     if (!encodingCache.has(defaultModel)) {
@@ -45,7 +46,7 @@ const countTokens = (text, model = 'gpt-4') => {
     const tokens = encoding.encode(text);
     return tokens.length;
   } catch (error) {
-    console.error('Error counting tokens:', error);
+    logger.logSystemError('Error counting tokens', error, { textLength: text.length, model });
     // Rough estimation as fallback: ~4 characters per token
     return Math.ceil(text.length / 4);
   }
@@ -66,7 +67,7 @@ const batchCountTokens = (texts, model = 'gpt-4') => {
       const tokens = encoding.encode(text);
       return tokens.length;
     } catch (error) {
-      console.error('Error counting tokens:', error);
+      logger.logSystemError('Error counting tokens in batch', error, { textIndex: texts.indexOf(text), model });
       return Math.ceil(text.length / 4);
     }
   });

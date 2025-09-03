@@ -17,7 +17,6 @@ async function generateCustomSessionTitle(content) {
 
     return title;
   } catch (err) {
-    // console.warn('Title generation failed:', err.message);
     return 'New Chat';
   }
 }

@@ -1,6 +1,7 @@
 // controller/chats.js
 
 const { supabase } = require("../config/supabaseClient");
+const logger = require('../utils/logger');
 
 exports.listChatSessionsPerModel = async (req, res) => {
     const { userId, assistantSlug, page = 1, limit = 20 } = req.query;
@@ -18,7 +19,7 @@ exports.listChatSessionsPerModel = async (req, res) => {
         // Get total count for pagination metadata
         const { count: totalCount, error: countError } = await supabase
             .from('chat_sessions')
-            .select('*', { count: 'exact', head: true })
+            .select('id', { count: 'exact', head: true })
             .eq('user_id', userId)
             .eq('assistant_slug', assistantSlug);
 
@@ -27,7 +28,7 @@ exports.listChatSessionsPerModel = async (req, res) => {
         // Get paginated data
         const { data, error } = await supabase
             .from('chat_sessions')
-            .select('*')
+            .select('id, title, user_id, assistant_slug, created_at, updated_at, message_count')
             .eq('user_id', userId)
             .eq('assistant_slug', assistantSlug)
             .order('created_at', { ascending: false })
@@ -47,7 +48,7 @@ exports.listChatSessionsPerModel = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("Assistant chats extraction error:", error);
+        logger.logSystemError('Error fetching chat sessions', error, { userId, assistantSlug, page, limit });
         res.status(500).json({ error: "Internal server error" });
     }
 };
@@ -98,7 +99,7 @@ exports.listAllChatSessions = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("Sessions chats extraction error:", error);
+        logger.logSystemError('Sessions chats extraction error', error, { userId });
         res.status(500).json({ error: "Internal server error" });
     }
 }
@@ -200,7 +201,7 @@ exports.getMessagesBySession = async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error fetching messages:', err.message);
+    logger.logSystemError('Error fetching messages', err, { sessionId, assistantSlug, user_id });
     return res.status(500).json({ error: 'Failed to fetch messages' });
   }
 };
@@ -237,7 +238,7 @@ exports.fetchOneChatSession = async (req, res) => {
 
     return res.status(200).json({ session });
   } catch (err) {
-    console.error('Fetch session error:', err);
+    logger.logSystemError('Fetch session error', err, { sessionId, user_id });
     return res.status(500).json({ error: 'Internal server error' });
   }
 };

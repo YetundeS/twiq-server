@@ -1,6 +1,7 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const path = require('path');
+const logger = require('./logger');
 
 /**
  * Compress an image file
@@ -99,7 +100,7 @@ const compressImage = async (inputPath, options = {}) => {
       }
     };
   } catch (error) {
-    console.error('Image compression error:', error);
+    logger.logSystemError('Image compression error', error, { inputPath, options });
     return {
       success: false,
       error: error.message,

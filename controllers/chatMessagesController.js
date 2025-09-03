@@ -6,6 +6,7 @@ const { countTokens } = require('../utils/tokenEncoder');
 const { hasAccess } = require('../utils/userAccess');
 const { compressImage, isCompressibleImage, getOptimalCompressionSettings } = require('../utils/imageCompressor');
 const vectorStoreService = require('../services/vectorStoreService');
+const logger = require('../utils/logger');
 const VectorStoreErrorHandler = require('../utils/vectorStoreErrorHandler');
 const { checkAndResetQuota } = require('../services/quotaResetService');
 const fs = require('fs');
@@ -134,7 +135,11 @@ exports.sendMessage = async (req, res) => {
                 compressedPath = compressionResult.compressedPath;
                 tempFilePaths.push(compressedPath);
                 
-                console.log(`Compressed ${file.originalname}: ${compressionResult.originalSize} -> ${compressionResult.compressedSize} (${compressionResult.compressionRatio}% reduction)`);
+                logger.logInfo(`Image compressed: ${file.originalname}`, {
+                  originalSize: compressionResult.originalSize,
+                  compressedSize: compressionResult.compressedSize,
+                  compressionRatio: compressionResult.compressionRatio
+                });
               }
             }
             
@@ -237,12 +242,12 @@ exports.sendMessage = async (req, res) => {
             throw new Error(`Failed to create vector store: ${vectorStoreResponse.error}`);
           }
         } catch (vectorError) {
-          console.error('Failed to create vector store:', vectorError);
+          logger.logSystemError('Failed to create vector store', vectorError, { user_id, textFileCount: textFileIds.length });
           // Fall back to individual file attachments if vector store fails
         }
       }
     } catch (err) {
-      console.log('Failed to process uploaded files: ', err)
+      logger.logSystemError('Failed to process uploaded files', err, { user_id, hasFiles: !!uploadedFiles?.length });
       // Clean up all temp files on general error (async)
       await Promise.all(tempFilePaths.map(async (path) => {
         try {
@@ -607,7 +612,7 @@ exports.sendMessage = async (req, res) => {
     }
 
   } catch (err) {
-    console.log('error: ', err)
+    logger.logSystemError('Chat message sending error', err, { user_id, assistantSlug, session_id, hasFiles: !!uploadedFiles?.length });
     if (!res.headersSent) {
       res.status(500);
       res.write(`data: ${JSON.stringify({ type: 'ERROR', message: err.message })}\n\n`);

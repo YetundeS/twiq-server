@@ -1,5 +1,6 @@
 const openai = require('../openai');
 const { supabase } = require('../config/supabaseClient');
+const logger = require('../utils/logger');
 
 class VectorStoreService {
   constructor() {
@@ -56,7 +57,7 @@ class VectorStoreService {
       };
 
     } catch (error) {
-      console.error('❌ Failed to create vector store:', error);
+      logger.logSystemError('Failed to create vector store', error, { userId, name, fileCount: fileIds.length });
       return {
         success: false,
         error: error.message
@@ -76,7 +77,7 @@ class VectorStoreService {
       // Check if session already has a vector store
       const { data: existingStore } = await supabase
         .from('vector_stores')
-        .select('*')
+        .select('id, openai_id, user_id, session_id, assistant_slug, expires_at, file_count, created_at, updated_at, status')
         .eq('user_id', userId)
         .eq('session_id', sessionId)
         .eq('status', 'active')
@@ -120,7 +121,7 @@ class VectorStoreService {
       };
 
     } catch (error) {
-      console.error('❌ Failed to get/create session vector store:', error);
+      logger.logSystemError('Failed to get/create session vector store', error, { userId, sessionId, fileCount: fileIds.length });
       return {
         success: false,
         error: error.message
@@ -150,10 +151,10 @@ class VectorStoreService {
         })
         .eq('store_id', storeId);
 
-      console.log(`✅ Added ${fileIds.length} files to vector store ${storeId}`);
+      logger.logInfo('Files added to vector store', { storeId, fileCount: fileIds.length });
 
     } catch (error) {
-      console.error('❌ Failed to add files to vector store:', error);
+      logger.logSystemError('Failed to add files to vector store', error, { storeId, fileCount: fileIds.length });
       throw error;
     }
   }
@@ -186,7 +187,7 @@ class VectorStoreService {
       // Get original store details
       const { data: originalStore } = await supabase
         .from('vector_stores')
-        .select('*')
+        .select('id, openai_id, user_id, session_id, assistant_slug, expires_at, file_count, created_at, updated_at, status')
         .eq('store_id', storeId)
         .single();
 
@@ -226,13 +227,13 @@ class VectorStoreService {
         // Mark original as expired
         await this.markStoreExpired(storeId);
 
-        console.log(`✅ Recreated expired vector store ${storeId} -> ${result.vectorStore.id}`);
+        logger.logInfo('Recreated expired vector store', { oldStoreId: storeId, newStoreId: result.vectorStore.id });
       }
 
       return result;
 
     } catch (error) {
-      console.error('❌ Failed to recreate expired vector store:', error);
+      logger.logSystemError('Failed to recreate expired vector store', error, { storeId, userId });
       return {
         success: false,
         error: error.message
@@ -292,7 +293,7 @@ class VectorStoreService {
 
       if (dbError) throw dbError;
 
-      console.log(`🗑️ Deleted vector store: ${storeId}`);
+      logger.logInfo('Vector store deleted', { storeId });
       
       return {
         success: true,
@@ -300,7 +301,7 @@ class VectorStoreService {
       };
 
     } catch (error) {
-      console.error('❌ Failed to delete vector store:', error);
+      logger.logSystemError('Failed to delete vector store', error, { storeId });
       return {
         success: false,
         error: error.message
@@ -315,19 +316,19 @@ class VectorStoreService {
     try {
       const { data: expiredStores } = await supabase
         .from('vector_stores')
-        .select('*')
+        .select('id, openai_id, user_id, session_id, assistant_slug, expires_at, file_count, created_at, updated_at, status')
         .eq('status', 'active')
         .lte('expires_at', new Date().toISOString());
 
       for (const store of expiredStores || []) {
         await this.markStoreExpired(store.store_id);
-        console.log(`🧹 Marked expired vector store: ${store.store_id}`);
+        logger.logInfo('Marked expired vector store', { storeId: store.store_id });
       }
 
       return expiredStores?.length || 0;
 
     } catch (error) {
-      console.error('❌ Failed to cleanup expired stores:', error);
+      logger.logSystemError('Failed to cleanup expired stores', error);
       return 0;
     }
   }

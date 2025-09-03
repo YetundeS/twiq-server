@@ -1,4 +1,5 @@
 const vectorStoreService = require('../services/vectorStoreService');
+const logger = require('./logger');
 
 class VectorStoreErrorHandler {
   
@@ -62,7 +63,7 @@ class VectorStoreErrorHandler {
    */
   static async handleExpiredVectorStore(error, userId, context = {}) {
     try {
-      console.log('🔄 Handling expired vector store error:', error.message);
+      logger.logInfo('Handling expired vector store error', { error: error.message, context });
 
       const storeId = this.extractVectorStoreId(error, context);
       if (!storeId) {
@@ -97,7 +98,7 @@ class VectorStoreErrorHandler {
       }
 
     } catch (recoveryError) {
-      console.error('❌ Failed to handle expired vector store:', recoveryError);
+      logger.logSystemError('Failed to handle expired vector store', recoveryError, { originalError: error.message, userId, context });
       return {
         success: false,
         error: `Recovery failed: ${recoveryError.message}`,
@@ -125,21 +126,21 @@ class VectorStoreErrorHandler {
         lastError = error;
         attempts++;
 
-        console.log(`🔄 API call attempt ${attempts} failed:`, error.message);
+        logger.logInfo('API call attempt failed', { attempt: attempts, error: error.message, maxRetries, context });
 
         // Check if this is a vector store expiration error
         if (this.isVectorStoreExpiredError(error) && attempts <= maxRetries) {
-          console.log('🔄 Detected expired vector store, attempting recovery...');
+          logger.logInfo('Detected expired vector store, attempting recovery', { error: error.message, userId, context });
 
           const recoveryResult = await this.handleExpiredVectorStore(error, userId, context);
           
           if (recoveryResult.success && recoveryResult.shouldRetry) {
-            console.log('✅ Vector store recreated, retrying API call...');
+            logger.logInfo('Vector store recreated, retrying API call', { userId, recoveryResult: recoveryResult.newVectorStore?.id, context });
             // Update context with new vector store ID for retry
             context = { ...context, ...recoveryResult.retryContext };
             continue;
           } else {
-            console.log('❌ Vector store recovery failed:', recoveryResult.error);
+            logger.logInfo('Vector store recovery failed', { error: recoveryResult.error, userId, context });
             throw new Error(`Vector store recovery failed: ${recoveryResult.error}`);
           }
         } else {
@@ -190,7 +191,7 @@ class VectorStoreErrorHandler {
       isVectorStoreError: this.isVectorStoreExpiredError(error)
     };
 
-    console.error('📊 Vector Store Error Log:', JSON.stringify(logData, null, 2));
+    logger.logSystemError('Vector Store Error', error, { context, logData });
 
     // Here you could integrate with monitoring services like:
     // - Sentry

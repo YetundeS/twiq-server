@@ -1,6 +1,7 @@
 
 
 const { getUserByAuthId, validateForm } = require("../utils/getUserByAuthId");
+const logger = require('../utils/logger');
 const { getRandomAvatar } = require("../services/authService")
 const { v4: uuidv4 } = require("uuid");
 const stripe = require("../config/stripeClient");
@@ -124,7 +125,7 @@ exports.signup = async (req, res) => {
 
     return res.status(500).json({ error: "Something went wrong during signup." });
   } catch (err) {
-    console.error("Signup error:", err);
+    logger.logSystemError('User signup failed', err, { email, user_name });
     return res.status(500).json({ error: "Internal server error." });
   }
 };
@@ -195,7 +196,7 @@ exports.resendEmailConfirmation = async (req, res) => {
       .eq("id", user.id);
 
     if (updateError) {
-      console.error("Token update error:", updateError.message);
+      logger.logSystemError('Email verification token update failed', updateError, { userId: user.id });
       return res.status(500).json({ error: "Could not update verification token." });
     }
 
@@ -215,7 +216,7 @@ exports.resendEmailConfirmation = async (req, res) => {
 
     return res.status(200).json({ message: "Confirmation email sent." });
   } catch (err) {
-    console.error("Resend email error:", err);
+    logger.logSystemError('Resend email verification failed', err, { userId: user?.id, email: user?.email });
     return res.status(500).json({ error: "Failed to resend confirmation email." });
   }
 };
@@ -259,7 +260,7 @@ exports.verifyEmailToken = async (req, res) => {
 
     return res.status(200).json({ message: "Email confirmed successfully." });
   } catch (err) {
-    console.error("Email verification error:", err);
+    logger.logSystemError('Email verification failed', err, { token });
     return res.status(500).json({ error: "Internal server error." });
   }
 };
@@ -287,7 +288,7 @@ exports.logout = async (req, res) => {
 
         return res.status(200).json({ message: "Logout successful." });
     } catch (err) {
-        console.log('LogOut error - ', err)
+        logger.logSystemError('User logout failed', err, { authHeader });
         return res.status(500).json({ error: "Internal server error." });
     }
 };
@@ -402,7 +403,7 @@ exports.softDeleteAccount = async (req, res) => {
 
     return res.status(200).json({ message: 'Account scheduled for deletion in 1 year.' });
   } catch (error) {
-    console.error("Soft delete error:", error);
+    logger.logSystemError('Account soft delete failed', error, { userId });
     return res.status(500).json({ error: error.message || "Internal server error." });
   }
 };

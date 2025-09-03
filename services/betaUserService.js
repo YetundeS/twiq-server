@@ -4,6 +4,7 @@ const { getRandomAvatar } = require("./authService");
 const { v4: uuidv4 } = require("uuid");
 const resend = require("../config/resendClient");
 const { userInvitationEmail } = require("../emails/templates/userInvitation");
+const logger = require('../utils/logger');
 
 async function grantBetaAccess({ 
   userEmail, 
@@ -43,7 +44,7 @@ async function grantBetaAccess({
     
     return { success: true, user: data };
   } catch (error) {
-    console.error('Error granting beta access:', error);
+    logger.logSystemError('Error granting beta access', error, { userEmail, betaPlan, grantedByAdminId });
     return { success: false, error: error.message };
   }
 }
@@ -76,7 +77,7 @@ async function checkBetaStatus(userId) {
       daysRemaining: isActive ? Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)) : 0
     };
   } catch (error) {
-    console.error('Error checking beta status:', error);
+    logger.logSystemError('Error checking beta status', error, { userId });
     return { isActive: false };
   }
 }
@@ -115,7 +116,7 @@ async function getBetaUsers({ includeExpired = false }) {
       daysRemaining: Math.max(0, Math.ceil((new Date(user.beta_end_date) - new Date()) / (1000 * 60 * 60 * 24)))
     }));
   } catch (error) {
-    console.error('Error fetching beta users:', error);
+    logger.logSystemError('Error fetching beta users', error, { includeExpired });
     return [];
   }
 }
@@ -140,7 +141,7 @@ async function revokeBetaAccess(userId) {
 
     return { success: true };
   } catch (error) {
-    console.error('Error revoking beta access:', error);
+    logger.logSystemError('Error revoking beta access', error, { userId });
     return { success: false, error: error.message };
   }
 }
@@ -166,12 +167,12 @@ async function handleExpiredBetaUsers() {
         })
         .eq('id', user.id);
 
-      console.log(`Deactivated expired beta user: ${user.email}`);
+      logger.logInfo(`Deactivated expired beta user: ${user.email}`, { userId: user.id, email: user.email, beta_end_date: user.beta_end_date });
     }
 
     return { processedCount: expiredUsers.length };
   } catch (error) {
-    console.error('Error handling expired beta users:', error);
+    logger.logSystemError('Error handling expired beta users', error);
     return { processedCount: 0, error: error.message };
   }
 }
@@ -199,7 +200,7 @@ async function getBetaExpiringUsers(daysBeforeExpiry) {
 
     return data;
   } catch (error) {
-    console.error('Error fetching expiring beta users:', error);
+    logger.logSystemError('Error fetching expiring beta users', error, { daysBeforeExpiry });
     return [];
   }
 }
@@ -218,7 +219,7 @@ async function convertBetaToPaid(userId, stripeSubscriptionId) {
 
     return { success: true };
   } catch (error) {
-    console.error('Error converting beta to paid:', error);
+    logger.logSystemError('Error converting beta to paid', error, { userId, stripeSubscriptionId });
     return { success: false, error: error.message };
   }
 }
@@ -235,7 +236,7 @@ async function inviteAndGrantBetaAccess({
   let authUserId = null; // Track for cleanup if needed
   
   try {
-    console.log(`🚀 Starting user invitation process for: ${userEmail}`);
+    logger.logInfo('Starting user invitation process', { userEmail, userName, organizationName, betaPlan, grantedByAdminId });
     
     // Generate temporary password
     const temporaryPassword = Math.random().toString(36).slice(-12);
@@ -244,7 +245,7 @@ async function inviteAndGrantBetaAccess({
     
     const quota = PLAN_QUOTAS[betaPlan];
     if (!quota) {
-      console.log(`❌ Invalid beta plan: ${betaPlan}`);
+      logger.logSystemError('Invalid beta plan provided', new Error(`Invalid beta plan: ${betaPlan}`), { betaPlan, userEmail });
       throw new Error(`Invalid beta plan: ${betaPlan}`);
     }
 
@@ -256,12 +257,12 @@ async function inviteAndGrantBetaAccess({
       .single();
 
     if (checkError && checkError.code !== 'PGRST116') {
-      console.log(`❌ Error checking existing user:`, checkError);
+      logger.logSystemError('Error checking existing user', checkError, { userEmail });
       throw new Error(`Error checking existing user: ${checkError.message}`);
     }
 
     if (existingUser) {
-      console.log(`❌ User already exists: ${existingUser.id}`);
+      logger.logInfo('User already exists during invitation process', { existingUserId: existingUser.id, userEmail });
       return { 
         success: false, 
         error: "User with this email already exists. Use the grant beta access feature instead." 
@@ -273,7 +274,7 @@ async function inviteAndGrantBetaAccess({
     // so we'll use careful error handling and cleanup
     
     // Step 1: Create auth user with temporary password
-    console.log(`👤 Creating auth user...`);
+    logger.logInfo('Creating auth user', { userEmail });
     const { data: signupData, error: signupError } = await supabaseAdmin.auth.admin.createUser({
       email: userEmail,
       password: temporaryPassword,
@@ -281,24 +282,24 @@ async function inviteAndGrantBetaAccess({
     });
 
     if (signupError) {
-      console.log(`❌ Failed to create auth user:`, signupError);
+      logger.logSystemError('Failed to create auth user', signupError, { userEmail });
       throw new Error(`Failed to create user: ${signupError.message}`);
     }
 
     if (!signupData?.user) {
-      console.log(`❌ No user data returned from Supabase`);
+      logger.logSystemError('No user data returned from Supabase', new Error('No user data returned'), { userEmail });
       throw new Error("Failed to create user account");
     }
 
     authUserId = signupData.user.id; // Store for potential cleanup
 
     // Step 2: Generate avatar and verification token
-    console.log(`🎭 Generating avatar for: ${userName}`);
+    logger.logInfo('Generating avatar for user', { userName, userEmail });
     const { avatar_url } = getRandomAvatar(userName);
     const token = uuidv4();
 
     // Step 3: Create user profile with beta access
-    console.log(`🗃️ Creating user profile in database...`);
+    logger.logInfo('Creating user profile in database', { userEmail, authUserId, betaPlan });
     const profilePayload = {
       auth_id: signupData.user.id,
       user_name: userName,
@@ -327,16 +328,16 @@ async function inviteAndGrantBetaAccess({
       .single();
 
     if (profileError) {
-      console.log(`❌ Failed to create user profile:`, profileError);
+      logger.logSystemError('Failed to create user profile', profileError, { userEmail, authUserId, betaPlan });
       
       // Cleanup: delete auth user if profile creation fails
       if (authUserId) {
-        console.log(`🧹 Rolling back: Deleting auth user ${authUserId}`);
+        logger.logInfo('Rolling back: Deleting auth user', { authUserId, userEmail });
         try {
           await supabaseAdmin.auth.admin.deleteUser(authUserId);
-          console.log(`✅ Auth user deleted successfully`);
+          logger.logInfo('Auth user deleted successfully during rollback', { authUserId, userEmail });
         } catch (cleanupError) {
-          console.error(`⚠️ Warning: Failed to delete auth user during cleanup:`, cleanupError);
+          logger.logSystemError('Warning: Failed to delete auth user during cleanup', cleanupError, { authUserId, userEmail });
           // Log this for manual cleanup if needed
         }
       }
@@ -352,22 +353,22 @@ async function inviteAndGrantBetaAccess({
       .single();
 
     if (verifyError || !verifyProfile) {
-      console.log(`❌ Profile verification failed after creation`);
+      logger.logSystemError('Profile verification failed after creation', verifyError || new Error('Verification failed'), { authUserId, userEmail });
       
       // Cleanup both if verification fails
       if (authUserId) {
-        console.log(`🧹 Rolling back: Deleting auth user ${authUserId}`);
+        logger.logInfo('Rolling back: Deleting auth user due to verification failure', { authUserId, userEmail });
         try {
           await supabaseAdmin.auth.admin.deleteUser(authUserId);
         } catch (cleanupError) {
-          console.error(`⚠️ Warning: Failed to delete auth user during cleanup:`, cleanupError);
+          logger.logSystemError('Warning: Failed to delete auth user during verification cleanup', cleanupError, { authUserId, userEmail });
         }
       }
       
       throw new Error('Failed to verify user creation');
     }
 
-    console.log(`✅ User profile created and verified successfully: ${profileData.id}`);
+    logger.logInfo('User profile created and verified successfully', { profileId: profileData.id, userEmail, authUserId, betaPlan });
 
     // Send invitation email
     const loginUrl = "https://app.twiq.ai/auth";
@@ -387,14 +388,14 @@ async function inviteAndGrantBetaAccess({
         subject,
         html
       });
-      console.log(`✅ Invitation email sent successfully to ${userEmail}`);
+      logger.logInfo('Invitation email sent successfully', { userEmail, betaPlan });
     } catch (emailError) {
-      console.error(`❌ Failed to send invitation email to ${userEmail}:`, emailError);
+      logger.logSystemError('Failed to send invitation email', emailError, { userEmail, betaPlan });
       // Don't fail the entire operation if email fails
       // The user was created successfully, just log the email error
     }
 
-    console.log(`🎉 User invitation process completed successfully for: ${userEmail}`);
+    logger.logInfo('User invitation process completed successfully', { userEmail, userName, betaPlan, profileId: profileData.id });
     
     return { 
       success: true, 
@@ -402,8 +403,7 @@ async function inviteAndGrantBetaAccess({
       temporaryPassword // Return for admin reference (consider security implications)
     };
   } catch (error) {
-    console.error('❌ Error in inviteAndGrantBetaAccess:', error);
-    console.error('❌ Stack trace:', error.stack);
+    logger.logSystemError('Error in inviteAndGrantBetaAccess', error, { userEmail, userName, betaPlan, authUserId });
     return { success: false, error: error.message };
   }
 }

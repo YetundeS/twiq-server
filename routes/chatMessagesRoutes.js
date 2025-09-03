@@ -6,17 +6,20 @@ const { default: chatFileUpload } = require('../middlewares/fileUploadMiddleware
 const { chatMessageLimiter, fileUploadLimiter, subscriptionQuotaCheck } = require('../middlewares/rateLimitMiddleware');
 const { deduplicationMiddleware } = require('../middlewares/deduplicationMiddleware');
 const VectorStoreMiddleware = require('../middlewares/vectorStoreMiddleware');
+const { permissiveSanitization } = require('../middlewares/inputSanitizationMiddleware');
+const logger = require('../utils/logger');
 
 // Apply rate limiting: chat message limiter first, then file upload limiter if files present
 router.post('/create', 
   isAuthenticatedUser,
+  permissiveSanitization, // Allow some formatting but block malicious content
   chatMessageLimiter,
   subscriptionQuotaCheck,
   VectorStoreMiddleware.addRecoveryContext,
   deduplicationMiddleware({
     ttl: 30000, // 30 seconds
     onDuplicate: (req, existing) => {
-      console.log(`Duplicate request detected for user ${req.user.id}, original request: ${existing.id}`);
+      logger.info('Duplicate chat request detected', { userId: req.user.id, originalRequestId: existing.id });
     }
   }),
   (req, res, next) => {
